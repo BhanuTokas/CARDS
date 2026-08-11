@@ -1,5 +1,7 @@
 # CARDS
 
+[![CI](https://github.com/BhanuTokas/CARDS/actions/workflows/ci.yml/badge.svg)](https://github.com/BhanuTokas/CARDS/actions/workflows/ci.yml)
+
 CARDS: Concept Attribution via Retrieved Distribution Shift
 
 A black-box concept attribution method. Instead of generating counterfactual

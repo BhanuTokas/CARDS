@@ -31,7 +31,7 @@ class CandidatePool:
         encoder: ImageEncoder,
         labels: list[int] | None = None,
         batch_size: int = 256,
-    ) -> "CandidatePool":
+    ) -> CandidatePool:
         paths = sorted(p for p in Path(image_dir).rglob("*") if p.suffix.lower() in IMAGE_EXTENSIONS)
         if not paths:
             raise ValueError(f"no images found under {image_dir}")

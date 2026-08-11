@@ -41,7 +41,6 @@ def matched_retrieval(
     for multiple present-set images.
     """
     n = pool.embeddings.shape[0]
-    present_set = set(present_indices)
     candidate_mask = torch.ones(n, dtype=torch.bool)
     candidate_mask[torch.tensor(present_indices, dtype=torch.long)] = False
     candidate_indices = candidate_mask.nonzero(as_tuple=True)[0]

@@ -6,8 +6,6 @@ chosen over Gram-Schmidt to avoid order-dependence.
 
 from __future__ import annotations
 
-import torch
-
 from cards.directions.estimate import ConceptDirection
 
 
