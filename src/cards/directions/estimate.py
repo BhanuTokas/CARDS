@@ -24,4 +24,12 @@ def estimate_direction(
     present_embeddings: torch.Tensor,
     absent_embeddings: torch.Tensor,
 ) -> ConceptDirection:
-    raise NotImplementedError
+    if present_embeddings.ndim != 2 or absent_embeddings.ndim != 2:
+        raise ValueError("present_embeddings and absent_embeddings must be 2D (N, dim)")
+
+    diff = present_embeddings.mean(dim=0) - absent_embeddings.mean(dim=0)
+    magnitude = diff.norm().item()
+    if magnitude == 0.0:
+        raise ValueError(f"zero-magnitude direction for concept {concept!r}: P_c and N_c means coincide")
+
+    return ConceptDirection(concept=concept, unit_vector=diff / magnitude, magnitude=magnitude)

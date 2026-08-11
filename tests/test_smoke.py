@@ -8,6 +8,7 @@ import cards.concepts.prompts
 import cards.directions.estimate
 import cards.directions.orthogonalize
 import cards.encoders.base
+import cards.encoders.open_clip_encoder
 import cards.retrieval.confound
 import cards.retrieval.pool
 import cards.retrieval.retrieve
