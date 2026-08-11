@@ -1,0 +1,3 @@
+# Default (Step 7): Cohen's-d-style output-variance normalization.
+name: variance
+method: variance

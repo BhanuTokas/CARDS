@@ -1,0 +1,6 @@
+# 168-concept general bank. coverage_threshold converts pixel-level
+# segmentation masks to image-level binary concept labels (Validation
+# Section 2, item 5).
+name: broden
+root: ../Datasets/broden_concepts
+coverage_threshold: 0.1

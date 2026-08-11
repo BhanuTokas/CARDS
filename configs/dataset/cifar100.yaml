@@ -1,0 +1,3 @@
+name: cifar100
+root: ../Datasets/CIFAR100
+variant: cifar100

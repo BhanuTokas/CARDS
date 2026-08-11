@@ -1,0 +1,6 @@
+# CCE's spurious-correlation benchmark. `scenario` is one of CCE's 20
+# setups (e.g. dog(snow), dog(bed)) — see open decisions checklist re:
+# whether CCE released the 20 trained checkpoints.
+name: metadataset
+root: ../Datasets/MetaDataset
+scenario: dog_snow

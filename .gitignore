@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CARDS project-specific
+outputs/
+multirun/
+.venv/
+data/
+*.ckpt
+*.pt
+*.pth

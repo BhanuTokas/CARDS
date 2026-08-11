@@ -1,0 +1,3 @@
+name: open_clip_h
+model_name: ViT-H-14
+pretrained: laion2b_s32b_b79k

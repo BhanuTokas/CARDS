@@ -1,0 +1,6 @@
+# Highest-priority dataset (Section 5): replicates the CounterConcept Fig. 2/3
+# accuracy-access comparison against TCAV. Candidate primary dataset for the
+# full ablation sweep (see open decisions checklist).
+name: cifar10
+root: ../Datasets/CIFAR10
+variant: cifar10

@@ -1,0 +1,3 @@
+# Baseline ablation arm, not the default: plain top-k / bottom-k.
+name: naive
+strategy: naive

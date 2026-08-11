@@ -1,0 +1,4 @@
+# Default encoder (Step 2). Ablated against open_clip_h.yaml / siglip.yaml (Section 3).
+name: clip
+model_name: ViT-B-32
+pretrained: openai

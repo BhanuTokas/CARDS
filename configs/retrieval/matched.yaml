@@ -1,0 +1,4 @@
+# Default (Step 3): nearest-neighbor-after-projection. Doesn't require
+# naming the confound in advance.
+name: matched
+strategy: matched

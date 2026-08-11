@@ -1,0 +1,7 @@
+# Ablation, not default (Step 7): normalize by Delta_c instead of output
+# variance. distance_fn picks how Delta_c itself is computed between the
+# P_c/N_c centroids — angular is preferred for consistency with Step 2's
+# cosine-similarity retrieval (see Step 7 sub-ablation).
+name: embedding_distance
+method: embedding_distance
+distance_fn: angular  # angular | euclidean

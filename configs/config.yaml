@@ -1,0 +1,37 @@
+# Top-level Hydra config. Each `defaults` entry names a config *group*
+# (a subdirectory below) and which option within it is active by default.
+# Override any of them from the CLI without touching this file, e.g.:
+#   uv run python scripts/run_attribution.py encoder=open_clip_h retrieval=naive
+# Or sweep across several at once:
+#   uv run python scripts/run_attribution.py -m encoder=clip,open_clip_h,siglig
+defaults:
+  - encoder: clip
+  - retrieval: matched
+  - dataset: cifar10
+  - normalization: variance
+  - _self_
+
+seed: 0
+device: cuda
+
+# Step 2/3: retrieval set size — an ablation target (Section 3), not fixed.
+k: 50
+
+# Candidate pool source: "val" primary, "train" fallback if too small
+# (see open design decisions checklist).
+pool_source: val
+
+output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+hydra:
+  # Hydra changes the process CWD to hydra.run.dir by default, which would
+  # silently break the "../Datasets/..." relative paths in configs/dataset/*.
+  # Keep CWD at the launch directory instead; Hydra still writes its own
+  # logs/config snapshot to output_dir regardless of this setting.
+  job:
+    chdir: false
+  run:
+    dir: ${output_dir}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.override_dirname}

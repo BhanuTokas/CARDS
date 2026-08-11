@@ -1,0 +1,4 @@
+# Used when the confound is known ahead of time and is class-conditional
+# (e.g. the CCE MetaDataset benchmark).
+name: stratified
+strategy: stratified
