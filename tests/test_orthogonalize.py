@@ -55,10 +55,19 @@ def test_lowdin_orthogonalize_is_order_independent():
         assert torch.allclose(result_abc[concept], result_cab[concept], atol=1e-5)
 
 
-def test_lowdin_orthogonalize_requires_at_least_two_directions():
-    direction = _make_direction("a", torch.randn(4))
-    with pytest.raises(ValueError):
-        lowdin_orthogonalize([direction])
+def test_lowdin_orthogonalize_single_direction_is_noop():
+    direction = _make_direction("a", torch.randn(4), magnitude=3.0)
+
+    result = lowdin_orthogonalize([direction])
+
+    assert len(result) == 1
+    assert result[0].concept == "a"
+    assert result[0].magnitude == 3.0
+    assert torch.allclose(result[0].unit_vector, direction.unit_vector, atol=1e-5)
+
+
+def test_lowdin_orthogonalize_empty_list_returns_empty():
+    assert lowdin_orthogonalize([]) == []
 
 
 def test_lowdin_orthogonalize_rejects_linearly_dependent_directions():

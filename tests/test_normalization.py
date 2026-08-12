@@ -40,6 +40,20 @@ def test_embedding_distance_normalize_rejects_zero_delta():
         embedding_distance_normalize(raw_score=4.0, delta_c=0.0)
 
 
+def test_variance_normalize_rejects_near_zero_pooled_std():
+    # not exactly zero, but small enough that dividing by it would blow up
+    present_outputs = torch.tensor([1.0, 1.0 + 1e-10])
+    absent_outputs = torch.tensor([1.0, 1.0])
+
+    with pytest.raises(ValueError):
+        variance_normalize(present_outputs, absent_outputs)
+
+
+def test_embedding_distance_normalize_rejects_near_zero_delta():
+    with pytest.raises(ValueError):
+        embedding_distance_normalize(raw_score=4.0, delta_c=1e-10)
+
+
 def test_angular_distance_identical_vectors_is_zero():
     vector = torch.tensor([1.0, 2.0, 3.0])
     assert angular_distance(vector, vector) == pytest.approx(0.0, abs=1e-6)

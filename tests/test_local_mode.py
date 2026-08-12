@@ -62,3 +62,13 @@ def test_local_score_matched_rejects_nonpositive_n_neighbors():
 
     with pytest.raises(ValueError):
         local_score_matched(_black_box, x, x_embedding, pool_embeddings, pool_images, n_neighbors=0)
+
+
+def test_local_score_matched_rejects_mismatched_pool_lengths():
+    x = torch.tensor([1.0, 1.0])
+    x_embedding = torch.tensor([1.0, 0.0])
+    pool_embeddings = torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])  # 3 embeddings
+    pool_images = torch.tensor([[1.0, 1.0], [2.0, 2.0]])  # only 2 images
+
+    with pytest.raises(ValueError):
+        local_score_matched(_black_box, x, x_embedding, pool_embeddings, pool_images, n_neighbors=1)

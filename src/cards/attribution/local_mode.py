@@ -41,6 +41,11 @@ def local_score_matched(
     same convention as retrieval), not the full candidate pool.
     """
     n = pool_embeddings.shape[0]
+    if pool_images.shape[0] != n:
+        raise ValueError(
+            f"pool_embeddings and pool_images must have matching length "
+            f"({n} != {pool_images.shape[0]})"
+        )
     if n_neighbors <= 0:
         raise ValueError(f"n_neighbors must be positive, got {n_neighbors}")
     if n_neighbors > n:
