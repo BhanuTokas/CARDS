@@ -53,17 +53,24 @@ src/cards/
   retrieval/        Step 2 (top-k/bottom-k) + Step 3 (confound-matched / stratified retrieval)
   directions/         Step 4 (diff-of-means direction) + Step 5 (Löwdin orthogonalization)
   attribution/          Step 6 (global TCAV-style / local CCE-style scoring) + Step 7 (normalization)
-  data/                   Dataset loaders: CIFAR-10/100, CUB, CCE MetaDataset, Broden
-  utils/                   Seeding etc.
+  models/                 Pluggable black-box model protocol for Step 6/7 (see BlackBoxModel)
+  data/                    Dataset loaders: CIFAR-10/100, CUB, CCE MetaDataset, Broden
+  validation/               Design-doc Section 2 validation checks (currently: Broden retrieval purity)
+  pipeline.py                 Orchestrates Steps 1-7 end to end, driven by configs/config.yaml
+  utils/                        Seeding etc.
 
 configs/            Hydra configs — see "Configs with Hydra" below
-scripts/            CLI entrypoints (Hydra-wired)
+scripts/            CLI entrypoints (Hydra-wired attribution pipeline + standalone validation scripts)
 tests/               pytest
 ```
 
-Every module under `src/cards` currently contains stub function signatures
-with `NotImplementedError` bodies, referencing the specific design-doc step
-each one implements. Steps 1–4 are the ones ready to fill in first.
+Steps 1–7 are implemented and tested; `scripts/run_attribution.py` wires them
+together end to end (Steps 1–5 always run, Steps 6–7 run once a real
+black-box model is configured under `configs/model/` — `none` is the
+default, which just skips scoring). `cards/data/datasets.py`'s loaders are
+implemented for CIFAR-10/100, CUB, and Broden; MetaDataset's loader assumes
+an ImageFolder-style layout that hasn't been checked against a real release
+copy yet.
 
 ## Configs with Hydra
 
@@ -117,9 +124,60 @@ Config groups currently defined:
 - `configs/encoder/` — `clip` (default), `open_clip_h`, `siglip`
 - `configs/retrieval/` — `matched` (default), `stratified`, `naive`
 - `configs/dataset/` — `cifar10` (default), `cifar100`, `cub`, `metadataset`, `broden`
+  (`broden` isn't usable as a retrieval pool through `run_attribution.py` —
+  it's ground-truth pairs, not a pool; see `cards.data.datasets.load_broden`
+  and the validation scripts below instead)
 - `configs/normalization/` — `variance` (default), `embedding_distance`
+- `configs/model/` — `none` (default, skips Steps 6-7)
 
 Note: `hydra.job.chdir` is explicitly set to `false` in `config.yaml` — by
 default Hydra changes the process's working directory to the run's output
 folder, which would break the `../Datasets/...` relative paths used in
 `configs/dataset/*.yaml`.
+
+## Validation scripts
+
+Standalone scripts (plain `argparse`, not Hydra-wired — they're one-off
+checks, not part of the ablation grid) for the design doc's Section 2
+validation experiments:
+
+- **`scripts/broden_purity_check.py`** — Section 2 item 5: precision@k /
+  negative-recall@k / average precision of CARDS' Step 1-2 CLIP retrieval
+  against Broden's ground-truth positives/negatives, per concept. Useful for
+  setting a per-concept reliability gate (mirroring CCE's 0.7-accuracy
+  filter) before trusting attribution scores for a given concept.
+- **`scripts/broden_label_flags.py`** — surfaces the ground-truth positives
+  CLIP ranks least like the concept, and the negatives it ranks most like
+  the concept, as candidates for manual label-quality review.
+- **`scripts/cub_concept_bank_accuracies.py`** — recovers human-readable
+  names for the anonymous 112-concept bank baked into `../post_hoc_cbm`'s
+  trained CUB PCBM checkpoint (the standard Concept Bottleneck Models
+  312→112 CUB attribute filtering) and reports each concept's train/test CAV
+  accuracy, for auditing that checkpoint before reusing it as CARDS' Step
+  6-7 black-box model.
+
+Both Broden scripts default to checking all 170 concepts, which takes a few
+minutes (CLIP has to encode every image in each concept's positive/negative
+set). Pass `--concepts` to check a subset instead, e.g.
+`--concepts dog air_conditioner`.
+
+Reusable logic behind the two Broden scripts lives in
+`cards.validation.broden_purity`, tested independently of any real CLIP
+model or dataset in `tests/test_broden_purity.py`.
+
+### Finding: the Broden concept dataset has real label corruption
+
+Initial validation found that concepts with notably low retrieval-purity AP
+are usually mislabeled, not just visually hard — e.g. a `knob`-labeled image
+is actually a windmill, a `street_s`-labeled image is actually a dam. 9/9
+checked low-AP concepts showed this; two high-AP controls (`dog`, `bus`)
+didn't. Traced as far as possible, this is a real data-quality issue in the
+pre-packaged, third-party Broden concept dataset itself (likely originating
+from the CCE paper's experimental setup), not a bug anywhere in this repo.
+
+Full writeup, evidence, and root-cause tracing: **[docs/broden_label_corruption.md](docs/broden_label_corruption.md)**.
+
+All three scripts write into `results/` by default (`--output` overrides
+this). `results/` already has the full-170-concept / full-112-concept
+outputs checked in from initial validation, so a reader can inspect the
+findings directly without rerunning anything.

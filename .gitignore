@@ -220,6 +220,7 @@ __marimo__/
 # CARDS project-specific
 outputs/
 multirun/
+results/
 .venv/
 *.ckpt
 *.pt

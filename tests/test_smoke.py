@@ -15,6 +15,7 @@ import cards.pipeline
 import cards.retrieval.confound
 import cards.retrieval.pool
 import cards.retrieval.retrieve
+import cards.validation.broden_purity
 
 
 def test_package_imports():
