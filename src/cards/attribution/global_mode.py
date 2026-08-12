@@ -12,6 +12,7 @@ from collections.abc import Callable
 import torch
 
 
+@torch.no_grad()
 def global_score(
     black_box: Callable[[torch.Tensor], torch.Tensor],
     present_images: torch.Tensor,
@@ -19,4 +20,7 @@ def global_score(
 ) -> tuple[float, torch.Tensor, torch.Tensor]:
     """Returns (raw_score, b(P_c) outputs, b(N_c) outputs) — the latter two
     are needed by Step 7's output-variance normalization."""
-    raise NotImplementedError
+    present_outputs = black_box(present_images)
+    absent_outputs = black_box(absent_images)
+    raw_score = (present_outputs.mean() - absent_outputs.mean()).item()
+    return raw_score, present_outputs, absent_outputs
