@@ -38,6 +38,18 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          prompt: |
+            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+
+            After the review above completes, always post exactly one top-level PR
+            comment via `gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "..."`
+            summarizing the outcome, even if no issues were found. If findings were
+            reported, briefly summarize them; if none were found, post a short comment
+            saying so explicitly (e.g. "Automated review: no issues found."), so the PR
+            always shows a visible result instead of staying silent when clean.
+          # code-review normally only posts inline comments when it has findings, which
+          # leaves a clean PR looking untouched -- the prompt above forces a summary
+          # comment either way, so this needs Bash(gh pr comment) allowed explicitly.
+          claude_args: '--allowed-tools Bash(gh pr comment:*)'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
