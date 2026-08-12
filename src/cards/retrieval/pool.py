@@ -18,6 +18,14 @@ from cards.encoders.base import ImageEncoder
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
+def _encode_paths(paths: list[Path], encoder: ImageEncoder, batch_size: int) -> torch.Tensor:
+    chunks = []
+    for start in range(0, len(paths), batch_size):
+        images = [Image.open(p) for p in paths[start : start + batch_size]]
+        chunks.append(encoder.encode_images(images))
+    return torch.cat(chunks, dim=0)
+
+
 @dataclass
 class CandidatePool:
     paths: list[Path]
@@ -38,11 +46,25 @@ class CandidatePool:
         if labels is not None and len(labels) != len(paths):
             raise ValueError(f"labels length ({len(labels)}) != number of images ({len(paths)})")
 
-        chunks = []
-        for start in range(0, len(paths), batch_size):
-            batch_paths = paths[start : start + batch_size]
-            images = [Image.open(p) for p in batch_paths]
-            chunks.append(encoder.encode_images(images))
-        embeddings = torch.cat(chunks, dim=0)
+        embeddings = _encode_paths(paths, encoder, batch_size)
+        return cls(paths=paths, embeddings=embeddings, labels=labels)
 
+    @classmethod
+    def from_pairs(
+        cls,
+        pairs: list[tuple[Path, int]],
+        encoder: ImageEncoder,
+        batch_size: int = 256,
+    ) -> CandidatePool:
+        """Build a pool from an explicit (path, label) list, e.g. output
+        from a cards.data.datasets loader that already resolved a specific
+        train/val split -- unlike build(), paths aren't re-derived by
+        scanning a directory, and the given order is preserved as-is.
+        """
+        if not pairs:
+            raise ValueError("pairs must be non-empty")
+
+        paths = [path for path, _ in pairs]
+        labels = [label for _, label in pairs]
+        embeddings = _encode_paths(paths, encoder, batch_size)
         return cls(paths=paths, embeddings=embeddings, labels=labels)
