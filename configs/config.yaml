@@ -9,10 +9,15 @@ defaults:
   - retrieval: matched
   - dataset: cifar10
   - normalization: variance
+  - model: none
   - _self_
 
 seed: 0
 device: cuda
+
+# Concept(s) to compute attribution for -- no universal default, must be set
+# on the CLI, e.g. concepts='[red_wing]' or concepts='[red_wing,black_wing]'.
+concepts: ???
 
 # Step 2/3: retrieval set size — an ablation target (Section 3), not fixed.
 k: 50
@@ -20,6 +25,9 @@ k: 50
 # Candidate pool source: "val" primary, "train" fallback if too small
 # (see open design decisions checklist).
 pool_source: val
+
+# Step 5: only meaningful (and only applied) when len(concepts) > 1.
+orthogonalize: true
 
 output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 

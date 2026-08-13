@@ -1,0 +1,8 @@
+# No black-box model configured -- cards.pipeline.run stops after Steps
+# 1-5 (concept retrieval + direction estimation, saved to directions.pt).
+# Steps 6-7 (attribution scoring) need a real model wired in via a
+# _target_-based config here once one exists. A Post-hoc CBM (see
+# ../post_hoc_cbm) is the intended first adapter, deferred until a trained
+# checkpoint exists to test it against -- see BlackBoxModel in
+# cards.models.base for the interface it needs to satisfy.
+name: none

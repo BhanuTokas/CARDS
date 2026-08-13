@@ -17,6 +17,14 @@ dependencies = [
     "omegaconf>=2.3",
 ]
 
+[project.optional-dependencies]
+# Only needed by cards.models.posthoc_cbm (Steps 6-7 black-box adapter for a
+# trained github.com/mertyg/post-hoc-cbm checkpoint) -- kept optional since
+# the core pipeline (Steps 1-5) never needs it.
+pcbm = [
+    "pytorchcv>=0.0.67",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",
