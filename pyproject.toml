@@ -15,6 +15,12 @@ dependencies = [
     "tqdm>=4.66",
     "hydra-core>=1.3",
     "omegaconf>=2.3",
+    # open_clip's SigLIP models (configs/encoder/siglip.yaml) use an
+    # HFTokenizer under the hood -- without this, encoder=siglip fails at
+    # construction with "No module named 'transformers'" (found while
+    # actually running it for the first time; the config existed but was
+    # never exercised end to end before).
+    "transformers>=4.40",
 ]
 
 [project.optional-dependencies]
