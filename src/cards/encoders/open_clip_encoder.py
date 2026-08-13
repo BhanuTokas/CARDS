@@ -30,10 +30,19 @@ class OpenClipEncoder(ImageTextEncoder):
         )
         self.tokenizer = open_clip.get_tokenizer(model_name)
         self.model.eval().to(device)
+        self._embed_dim: int | None = None
 
     @property
     def embed_dim(self) -> int:
-        return self.model.visual.output_dim
+        # open_clip's visual backbone class varies by model (plain ViT,
+        # ResNet, timm-backed models like SigLIP), each exposing the output
+        # dim under a different attribute name (or none at all, for
+        # TimmModel) -- probing a real forward pass is the one thing that
+        # works uniformly across all of them.
+        if self._embed_dim is None:
+            probe = Image.new("RGB", (8, 8))
+            self._embed_dim = self.encode_images([probe]).shape[1]
+        return self._embed_dim
 
     @torch.no_grad()
     def encode_text(self, texts: list[str]) -> torch.Tensor:
