@@ -84,6 +84,12 @@ class PosthocCBMBlackBox:
         if repo_path not in sys.path:
             sys.path.insert(0, repo_path)
 
+        # weights_only=False is required -- PosthocLinearCBM's cavs/intercepts/
+        # norms are plain attributes, not registered buffers, so a state_dict
+        # alone can't reconstruct it (see the module docstring). This runs
+        # arbitrary code embedded in the pickle: only point checkpoint_path at
+        # a checkpoint you trust (e.g. one you or a known collaborator
+        # produced), never at an untrusted or externally-supplied file.
         self.device = device
         self.model = torch.load(checkpoint_path, map_location=device, weights_only=False)
         self.model.eval().to(device)

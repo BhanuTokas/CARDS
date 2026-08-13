@@ -48,7 +48,12 @@ def load_attribute_names(path: Path) -> dict[int, str]:
 def load_concept_accuracies(bank_path: Path) -> list[tuple[int, float, float]]:
     """(concept_idx, train_acc, test_acc) per concept, from a post_hoc_cbm
     concept-bank pickle keyed by concept_idx -> (vector, train_acc,
-    test_acc, intercept, margin_info)."""
+    test_acc, intercept, margin_info).
+
+    pickle.load runs arbitrary code embedded in the file: only point
+    --concept-bank at a file you trust (the default is a local, known
+    checkpoint), never at an untrusted or externally-supplied one.
+    """
     with open(bank_path, "rb") as f:
         bank = pickle.load(f)
     return [(idx, bank[idx][1], bank[idx][2]) for idx in sorted(bank.keys())]

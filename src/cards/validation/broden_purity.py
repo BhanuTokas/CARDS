@@ -83,6 +83,11 @@ def purity_metrics(pool: CandidatePool, t_c: torch.Tensor) -> tuple[float, float
     true_labels = torch.tensor(pool.labels)
     n_positives_total = int((true_labels == 1).sum().item())
     n_negatives_total = int((true_labels == 0).sum().item())
+    if n_positives_total == 0 or n_negatives_total == 0:
+        raise ValueError(
+            f"pool must have at least one positive and one negative label "
+            f"(got {n_positives_total} positive, {n_negatives_total} negative)"
+        )
     k = min(n_positives_total, n_negatives_total)
 
     present_indices, absent_indices = retrieve_top_bottom_k(pool, t_c, k)

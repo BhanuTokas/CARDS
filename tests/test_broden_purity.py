@@ -104,6 +104,24 @@ def test_purity_metrics_perfect_separation():
     assert average_precision == pytest.approx(1.0)
 
 
+def test_purity_metrics_rejects_no_positives():
+    paths = [Path(f"img_{i}.jpg") for i in range(3)]
+    embeddings = torch.tensor([[-1.0, 0.0]] * 3)
+    pool = CandidatePool(paths=paths, embeddings=embeddings, labels=[0, 0, 0])
+
+    with pytest.raises(ValueError, match="positive"):
+        purity_metrics(pool, torch.tensor([1.0, 0.0]))
+
+
+def test_purity_metrics_rejects_no_negatives():
+    paths = [Path(f"img_{i}.jpg") for i in range(3)]
+    embeddings = torch.tensor([[1.0, 0.0]] * 3)
+    pool = CandidatePool(paths=paths, embeddings=embeddings, labels=[1, 1, 1])
+
+    with pytest.raises(ValueError, match="negative"):
+        purity_metrics(pool, torch.tensor([1.0, 0.0]))
+
+
 def test_purity_metrics_with_swapped_pair():
     pool, t_c = _swapped_pair_pool()
 

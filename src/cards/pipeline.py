@@ -142,6 +142,10 @@ def instantiate_model(cfg: DictConfig):
     """
     if cfg.model.name == "none":
         return None
+    # Only `name` is stripped -- this couples the config schema to today's
+    # single non-_target_ metadata field. A future model config that adds
+    # another plain (non-constructor) field alongside `name` would need the
+    # same treatment here.
     model_cfg = {k: v for k, v in cfg.model.items() if k != "name"}
     return hydra.utils.instantiate(model_cfg)
 
