@@ -26,6 +26,12 @@ k: 50
 # (see open design decisions checklist).
 pool_source: val
 
+# Encode-once cache for candidate pool embeddings, keyed on (dataset,
+# split, encoder) -- see cards.retrieval.embedding_cache and
+# notes/ablation_scope_decision.md. Persists across runs (unlike
+# output_dir), since its whole purpose is to be reused by later runs/sweeps.
+cache_dir: embedding_cache
+
 # Step 5: only meaningful (and only applied) when len(concepts) > 1.
 orthogonalize: true
 

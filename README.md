@@ -156,6 +156,15 @@ default Hydra changes the process's working directory to the run's output
 folder, which would break the `../Datasets/...` relative paths used in
 `configs/dataset/*.yaml`.
 
+**Embedding cache**: candidate pool embeddings are cached to disk under
+`cache_dir` (default `embedding_cache/`, override with `cache_dir=...`),
+keyed on the `(dataset, pool_source, encoder)` combination — retrieval
+strategy, normalization, and model don't affect the pool, so a `-m` sweep
+over those axes reuses one cached encoding pass per distinct dataset+encoder
+instead of paying for it on every job. Deleting `embedding_cache/` (or a
+single stale `.pt` file inside it) forces a recompute; the cache also
+self-invalidates if the underlying `(dataset, split)` pool contents change.
+
 ## Validation scripts
 
 Standalone scripts (plain `argparse`, not Hydra-wired — they're one-off

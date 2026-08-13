@@ -222,6 +222,7 @@ outputs/
 multirun/
 results/
 notes/
+embedding_cache/
 .venv/
 *.ckpt
 *.pt

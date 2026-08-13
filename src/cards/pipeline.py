@@ -31,6 +31,7 @@ from cards.directions.orthogonalize import lowdin_orthogonalize
 from cards.encoders.base import ImageTextEncoder
 from cards.encoders.open_clip_encoder import OpenClipEncoder
 from cards.retrieval.confound import matched_retrieval, stratified_retrieval
+from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.pool import CandidatePool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
 from cards.utils.seed import set_seed
@@ -182,7 +183,7 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
     encoder = OpenClipEncoder(cfg.encoder.model_name, cfg.encoder.pretrained, device=cfg.device)
 
     pairs = load_dataset_pool(cfg)
-    pool = CandidatePool.from_pairs(pairs, encoder)
+    pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)
     log.info(
         "Candidate pool: %d images from dataset=%s split=%s",
         len(pool.paths),
