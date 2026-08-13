@@ -72,6 +72,27 @@ implemented for CIFAR-10/100, CUB, and Broden; MetaDataset's loader assumes
 an ImageFolder-style layout that hasn't been checked against a real release
 copy yet.
 
+**Black-box models (Steps 6–7)**: `configs/model/pcbm_cub.yaml` wires in a
+trained [Post-hoc CBM](https://github.com/mertyg/post-hoc-cbm) CUB species
+classifier via `cards.models.posthoc_cbm.PosthocCBMBlackBox` — verified
+end to end (`model.forward` correctly identifies held-out species by
+argmax, and a full attribution run on `red`/`black` for `Scarlet_Tanager`
+gives biologically sensible signs: black wings help the score, plain red
+hurts it, matching that species' actual field markings). Needs
+`uv sync --extra pcbm` (adds `pytorchcv`, for the `resnet18_cub` backbone)
+and `../post_hoc_cbm` checked out as a sibling directory:
+
+```
+uv sync --extra pcbm
+uv run python scripts/run_attribution.py concepts='[red,black]' dataset=cub model=pcbm_cub model.target_class=Scarlet_Tanager
+```
+
+`model.target_class` is any of the checkpoint's 200 CUB species names
+(defaults to `Scarlet_Tanager`, the design doc's own worked example). New
+black-box models plug in the same way: implement `cards.models.base.
+BlackBoxModel` (`preprocess()` + `__call__()`) and add a `configs/model/
+*.yaml` with a Hydra `_target_`.
+
 ## Configs with Hydra
 
 This project uses [Hydra](https://hydra.cc/) to manage the experiment config
@@ -128,7 +149,7 @@ Config groups currently defined:
   it's ground-truth pairs, not a pool; see `cards.data.datasets.load_broden`
   and the validation scripts below instead)
 - `configs/normalization/` — `variance` (default), `embedding_distance`
-- `configs/model/` — `none` (default, skips Steps 6-7)
+- `configs/model/` — `none` (default, skips Steps 6-7), `pcbm_cub`
 
 Note: `hydra.job.chdir` is explicitly set to `false` in `config.yaml` — by
 default Hydra changes the process's working directory to the run's output

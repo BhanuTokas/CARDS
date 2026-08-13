@@ -18,6 +18,7 @@ from cards.directions.estimate import ConceptDirection
 from cards.pipeline import (
     ConceptResult,
     compute_delta_c,
+    instantiate_model,
     load_and_preprocess,
     load_dataset_pool,
     normalize_score,
@@ -262,3 +263,39 @@ def test_save_directions_round_trips(tmp_path):
     loaded = torch.load(path, weights_only=False)
     assert loaded["dog"]["magnitude"] == pytest.approx(2.0)
     assert torch.allclose(loaded["dog"]["unit_vector"], torch.tensor([1.0, 0.0]))
+
+
+# ---- instantiate_model ----
+
+
+class _FakeBlackBoxModel:
+    """A stand-in _target_ that -- like the real PosthocCBMBlackBox --
+    doesn't accept a `name` kwarg, so this catches the bug where cfg.model's
+    `name` field (needed for the none-check) leaked into the instantiate()
+    call and broke construction."""
+
+    def __init__(self, checkpoint_path: str):
+        self.checkpoint_path = checkpoint_path
+
+
+def test_instantiate_model_returns_none_when_unconfigured():
+    cfg = OmegaConf.create({"model": {"name": "none"}})
+
+    assert instantiate_model(cfg) is None
+
+
+def test_instantiate_model_strips_name_before_instantiating():
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "name": "fake",
+                "_target_": "test_pipeline._FakeBlackBoxModel",
+                "checkpoint_path": "some/path.ckpt",
+            }
+        }
+    )
+
+    black_box = instantiate_model(cfg)
+
+    assert isinstance(black_box, _FakeBlackBoxModel)
+    assert black_box.checkpoint_path == "some/path.ckpt"

@@ -132,6 +132,20 @@ def normalize_score(
     raise ValueError(f"unknown normalization method {method!r}")
 
 
+def instantiate_model(cfg: DictConfig):
+    """Steps 6-7 black-box model, or None if cfg.model.name == 'none'.
+
+    cfg.model carries a plain `name` field (used only for this check)
+    alongside the _target_-based instantiation spec; strip it before handing
+    the rest to hydra.utils.instantiate, so it isn't passed through as an
+    unexpected constructor kwarg.
+    """
+    if cfg.model.name == "none":
+        return None
+    model_cfg = {k: v for k, v in cfg.model.items() if k != "name"}
+    return hydra.utils.instantiate(model_cfg)
+
+
 def load_and_preprocess(paths: list[Path], black_box) -> torch.Tensor:
     """Loads raw images and runs the black-box model's own preprocessing --
     a different transform than the CLIP preprocessing used for retrieval,
@@ -184,11 +198,11 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
     for result in results:
         log.info("concept=%s magnitude=%.4f", result.direction.concept, result.direction.magnitude)
 
-    if cfg.model.name == "none":
+    black_box = instantiate_model(cfg)
+    if black_box is None:
         log.info("model=none -- skipping Steps 6-7 (attribution scoring); directions saved to %s", output_dir)
         return results
 
-    black_box = hydra.utils.instantiate(cfg.model)
     for concept, result in zip(concepts, results):
         present_images = load_and_preprocess([pool.paths[i] for i in result.present_indices], black_box)
         absent_images = load_and_preprocess([pool.paths[i] for i in result.absent_indices], black_box)

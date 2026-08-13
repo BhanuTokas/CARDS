@@ -11,6 +11,7 @@ import cards.directions.orthogonalize
 import cards.encoders.base
 import cards.encoders.open_clip_encoder
 import cards.models.base
+import cards.models.posthoc_cbm
 import cards.pipeline
 import cards.retrieval.confound
 import cards.retrieval.pool

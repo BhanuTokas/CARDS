@@ -1,0 +1,11 @@
+# Post-hoc CBM black-box model (Steps 6-7), CUB species classifier.
+# Needs: `uv sync --extra pcbm` (pytorchcv), and ../post_hoc_cbm checked out
+# as a sibling directory -- see cards.models.posthoc_cbm for what's actually
+# required and why. target_class defaults to the design doc's own worked
+# example; override per attribution run, e.g. model.target_class=Blue_Jay.
+name: pcbm_cub
+_target_: cards.models.posthoc_cbm.PosthocCBMBlackBox
+checkpoint_path: ../post_hoc_cbm/trained_models_new/cub/resnet18_cub/pcbm_cub__resnet18_cub__cub_resnet18_cub_0__lam_0.0002__alpha_0.99__seed_42__linear.ckpt
+post_hoc_cbm_path: ../post_hoc_cbm
+target_class: Scarlet_Tanager
+device: ${device}
