@@ -221,6 +221,7 @@ __marimo__/
 outputs/
 multirun/
 results/
+notes/
 .venv/
 *.ckpt
 *.pt
