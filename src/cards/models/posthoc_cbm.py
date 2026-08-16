@@ -16,10 +16,13 @@ Two things this needs that aren't hard CARDS dependencies:
     own `models.model_zoo.get_model` on purpose so this doesn't depend on
     that function's exact signature.
 
-Currently only the resnet18_cub backbone/preprocessing is implemented --
-that's the only checkpoint verified in the CARDS investigation. A CLIP
-RN50-backed checkpoint (e.g. the broden-concept-bank ones) would need its
-own preprocess()/backbone branch.
+Two backbones are implemented: resnet18_cub (CUB) and plain resnet18 --
+ImageNet-pretrained, used for the CIFAR-100 checkpoint (see
+notes/ablation_scope_decision.md and docs/broden_label_corruption.md for
+why: a CLIP backbone here would make the CARDS-vs-PCBM correlation
+validation circular, since CARDS itself represents concepts via CLIP).
+A CLIP RN50-backed checkpoint (e.g. the original unfiltered broden-concept
+-bank ones) would need its own preprocess()/backbone branch.
 """
 
 from __future__ import annotations
@@ -37,6 +40,13 @@ from torchvision import transforms
 _CUB_MEAN = [0.5, 0.5, 0.5]
 _CUB_STD = [2.0, 2.0, 2.0]
 
+# Exact preprocessing post_hoc_cbm used for the plain (ImageNet-pretrained)
+# resnet18 backbone (models/model_zoo.py's resnet18 branch) -- note this
+# rescales via /255 on a pil_to_tensor uint8 tensor, not ToTensor's
+# built-in /255, so it isn't just cub_preprocess with different constants.
+_IMAGENET_MEAN = [0.485, 0.456, 0.406]
+_IMAGENET_STD = [0.229, 0.224, 0.225]
+
 
 def cub_preprocess() -> transforms.Compose:
     return transforms.Compose(
@@ -44,6 +54,18 @@ def cub_preprocess() -> transforms.Compose:
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(_CUB_MEAN, _CUB_STD),
+        ]
+    )
+
+
+def resnet18_preprocess() -> transforms.Compose:
+    return transforms.Compose(
+        [
+            transforms.Resize(256, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(224),
+            transforms.PILToTensor(),
+            lambda x: x / 255.0,
+            transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
         ]
     )
 
@@ -57,14 +79,24 @@ def resolve_target_index(idx_to_class: dict[int, str], target_class: str) -> int
     return class_to_idx[target_class]
 
 
-def _load_resnet18_cub_backbone(device: str) -> torch.nn.Module:
+def _load_pytorchcv_backbone(model_name: str, device: str) -> torch.nn.Module:
     from pytorchcv.model_provider import get_model as ptcv_get_model
 
-    full_model = ptcv_get_model("resnet18_cub", pretrained=True)
+    full_model = ptcv_get_model(model_name, pretrained=True)
     # Drop the final FC layer, keep everything up to the pooled feature
     # vector -- matches post_hoc_cbm's ResNetBottom (models/model_zoo.py).
     backbone = torch.nn.Sequential(*list(full_model.children())[:-1])
     return backbone.to(device).eval()
+
+
+_BACKBONES = {
+    "resnet18_cub": lambda device: _load_pytorchcv_backbone("resnet18_cub", device),
+    "resnet18": lambda device: _load_pytorchcv_backbone("resnet18", device),
+}
+_PREPROCESSORS = {
+    "resnet18_cub": cub_preprocess,
+    "resnet18": resnet18_preprocess,
+}
 
 
 class PosthocCBMBlackBox:
@@ -94,14 +126,15 @@ class PosthocCBMBlackBox:
         self.model = torch.load(checkpoint_path, map_location=device, weights_only=False)
         self.model.eval().to(device)
 
-        if self.model.backbone_name != "resnet18_cub":
+        backbone_name = self.model.backbone_name
+        if backbone_name not in _BACKBONES:
             raise NotImplementedError(
-                f"PosthocCBMBlackBox only supports the resnet18_cub backbone so far, "
-                f"got {self.model.backbone_name!r}"
+                f"PosthocCBMBlackBox only supports {sorted(_BACKBONES)} backbones so far, "
+                f"got {backbone_name!r}"
             )
 
-        self.backbone = _load_resnet18_cub_backbone(device)
-        self._preprocess = cub_preprocess()
+        self.backbone = _BACKBONES[backbone_name](device)
+        self._preprocess = _PREPROCESSORS[backbone_name]()
         self.target_index = resolve_target_index(self.model.idx_to_class, target_class)
 
     def preprocess(self, image: Image.Image) -> torch.Tensor:

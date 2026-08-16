@@ -86,16 +86,57 @@ before trusting it as a retrieval-quality or difficulty measurement — it is
 not safe to assume a low score means CARDS' retrieval (or any retrieval
 method) is failing.
 
+## Update: corruption is pervasive, not confined to low-AP concepts
+
+Follow-up spot-check (prompted by scoping a CIFAR-100 PCBM concept bank,
+which would source from this dataset) sampled the single worst-ranked
+flagged positive across a spread of concepts from AP 0.44 up to 0.87 --
+well above the ≤0.436 range of the originally-checked concepts:
+
+| concept | AP | worst flagged positive | verdict |
+|---|---|---|---|
+| bumper | 0.440 | shopping carts | corrupted |
+| candlestick | 0.462 | baby cribs | corrupted |
+| faucet | 0.483 | speaker/projector | corrupted |
+| pedestal | 0.486 | bakery display case | corrupted |
+| clock | 0.608 | stacked warehouse goods | corrupted |
+| can | 0.647 | pianos | corrupted |
+| handle_bar | 0.700 | folded fabric | corrupted |
+| glass | 0.785 | TV/entertainment setup | likely corrupted |
+| bucket | 0.748 | shearing scene, bucket visible in background | plausible |
+| ottoman | 0.853 | padded round stool | plausible |
+| **armchair** | **0.872** | **dog in grass wearing a hat** | **corrupted** |
+| dog (control) | 0.972 | genuine dog | clean |
+| bus (control) | 0.997 | distant landscape, ambiguous | plausible |
+
+`armchair` at AP 0.872 -- top quartile of all 170 concepts -- still has a
+blatantly mislabeled worst-ranked positive. This overturns the earlier
+framing ("corruption is concentrated in low-AP concepts"): it looks
+pervasive across most/all of the `broden_concepts` package at some rate,
+with AP tracking *severity* (what fraction of a concept's positives are
+affected) rather than presence/absence of corruption. A single AP
+threshold cannot cleanly separate corrupted from clean concepts --
+`n_flags` / flag-rate from `broden_label_flags.csv` doesn't help either,
+since it flags a near-constant ~15% of each concept's pool regardless of
+AP (an artifact of how the flagging script picks candidates, not a
+severity signal).
+
+Practical implication: any future use of this dataset as ground truth
+(e.g. training a PCBM concept bank) should not rely on an AP-threshold
+filter alone. Rebuilding the relevant concept(s) directly from the raw
+NetDissect release (`../NetDissect/dataset/broden1_224/`, already
+confirmed correct where cross-referenced -- see Root cause section
+above) is the more defensible path. Decision on how to proceed
+deferred -- see `notes/` for the live discussion when it resumes.
+
 ## Open follow-ups
 
-- A systematic pass over every low-AP concept (not just the ones above) to
-  confirm the full extent of the corruption.
+- Decide the concrete path forward for a corruption-free concept source
+  (rebuild from raw NetDissect vs. strict-threshold-plus-residual-risk
+  vs. sidestep Broden entirely with CLIP-prompted concepts) -- paused,
+  to be revisited.
 - Finding or reconstructing the actual script that built `broden_concepts/`
   from the raw Broden release, to pin down the exact mechanism.
-- Deciding whether to keep using this concept dataset (with a per-concept
-  reliability gate that also accounts for label-quality, not just retrieval
-  difficulty) or source/rebuild a clean version from the raw NetDissect
-  release directly.
 
 ## Reproducing this
 
