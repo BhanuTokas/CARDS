@@ -149,7 +149,7 @@ Config groups currently defined:
   it's ground-truth pairs, not a pool; see `cards.data.datasets.load_broden`
   and the validation scripts below instead)
 - `configs/normalization/` — `variance` (default), `embedding_distance`
-- `configs/model/` — `none` (default, skips Steps 6-7), `pcbm_cub`
+- `configs/model/` — `none` (default, skips Steps 6-7), `pcbm_cub`, `pcbm_cifar100`
 
 Note: `hydra.job.chdir` is explicitly set to `false` in `config.yaml` — by
 default Hydra changes the process's working directory to the run's output
@@ -164,6 +164,34 @@ over those axes reuses one cached encoding pass per distinct dataset+encoder
 instead of paying for it on every job. Deleting `embedding_cache/` (or a
 single stale `.pt` file inside it) forces a recompute; the cache also
 self-invalidates if the underlying `(dataset, split)` pool contents change.
+
+**Modality-gap de-meaning** (`demean_query`, default `true`): CLIP's image
+and text embeddings, even both L2-normalized into the same space, cluster
+in separate, non-overlapping regions (the "modality gap" — see Liang et
+al. 2022). Comparing `t_c` directly against image embeddings crosses that
+gap; de-meaning subtracts a text-modality reference center from `t_c`
+before retrieval to counteract it (see
+`cards.concepts.prompts.demean_query`/`compute_text_center`, and
+`notes/pcbm_correlation_investigation.md`'s v8/v9 entries for the
+validation behind it — the strongest lever found there, and it stacks
+with an encoder swap to SigLIP rather than being redundant with it: v9
+reaches r=0.205 vs. v6's CLIP/no-demeaning baseline of r=0.120). Set
+`demean_query=false` to reproduce pre-de-meaning results for an ablation
+comparison. Only the text-side query is de-meaned — image embeddings
+don't need it: it's a no-op for `retrieve_top_bottom_k`'s ranking (a
+per-pool constant shift doesn't change `argsort`), and `matched_retrieval`'s
+own nearest-neighbor step never crosses modalities to begin with.
+
+The de-meaning reference center needs a broad, stable concept set, not
+just the concepts being scored in one run — `demean_reference_concepts`
+defaults to `concepts` itself when that's 10+ entries, and falls back to
+a built-in generic vocabulary (`cards.concepts.prompts.
+GENERIC_REFERENCE_CONCEPTS`, 30 diverse everyday nouns) for smaller runs,
+logging a warning every time that fallback triggers since it's a generic
+stand-in, not specific to your concept bank. Pass
+`demean_reference_concepts='[concept1,concept2,...]'` explicitly (e.g.
+the full concept bank your run's concepts are drawn from) for a better
+estimate than the generic fallback.
 
 ## Validation scripts
 

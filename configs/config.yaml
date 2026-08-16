@@ -35,6 +35,25 @@ cache_dir: embedding_cache
 # Step 5: only meaningful (and only applied) when len(concepts) > 1.
 orthogonalize: true
 
+# Step 1: de-mean t_c against a text-modality reference center before
+# retrieval, to counteract the CLIP modality gap (see
+# cards.concepts.prompts.demean_query and notes/
+# pcbm_correlation_investigation.md's v8/v9 entries -- the strongest
+# lever found in that investigation, e.g. r=0.163 vs. 0.120 raw on the
+# CIFAR-100 validation). Default true; set demean_query=false to
+# reproduce pre-de-meaning results for comparison (Section 3 ablation).
+demean_query: true
+
+# Reference concepts to compute the de-meaning text center from (needs
+# a broad, stable set -- see compute_text_center's docstring for why).
+# Defaults to `concepts` itself if that's >=10 entries; below that,
+# falls back to CARDS' built-in generic vocabulary
+# (cards.concepts.prompts.GENERIC_REFERENCE_CONCEPTS) and logs a
+# warning every time, since that's a generic stand-in, not specific to
+# this run's concept bank. Pass an explicit concept bank for a better
+# estimate, e.g. demean_reference_concepts='[concept1,concept2,...]'.
+demean_reference_concepts: null
+
 output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 hydra:

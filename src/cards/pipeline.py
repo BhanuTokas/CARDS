@@ -24,7 +24,12 @@ from cards.attribution.normalization import (
     embedding_distance_normalize,
     variance_normalize,
 )
-from cards.concepts.prompts import build_concept_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.datasets import load_cifar, load_cub, load_metadataset
 from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
@@ -88,14 +93,51 @@ def retrieve_concept_sets(
     raise ValueError(f"unknown retrieval strategy {strategy!r}")
 
 
+def resolve_demean_reference_concepts(cfg: DictConfig, concepts: list[str]) -> list[str]:
+    """Which concepts to compute the demean_query text center from:
+    cfg.demean_reference_concepts if given, else `concepts` itself if
+    that's a big enough sample (>=10, compute_text_center's own floor),
+    else CARDS' built-in generic vocabulary -- logged loudly every time,
+    since it's a generic stand-in for the run's own concept bank, not a
+    substitute for one.
+    """
+    if cfg.demean_reference_concepts:
+        return list(cfg.demean_reference_concepts)
+    if len(concepts) >= 10:
+        return concepts
+    log.warning(
+        "demean_query is enabled but only %d concept(s) were given (%s) and "
+        "no demean_reference_concepts was set -- falling back to CARDS' "
+        "built-in generic reference vocabulary (%d concepts) to compute the "
+        "de-meaning text center. This is a generic stand-in, not specific to "
+        "this run's concept bank; pass demean_reference_concepts explicitly "
+        "(e.g. the full concept bank this run's concepts are drawn from) for "
+        "a better estimate.",
+        len(concepts),
+        concepts,
+        len(GENERIC_REFERENCE_CONCEPTS),
+    )
+    return GENERIC_REFERENCE_CONCEPTS
+
+
 def process_concept(
     cfg: DictConfig,
     encoder: ImageTextEncoder,
     pool: CandidatePool,
     concept: str,
+    text_center: torch.Tensor | None = None,
 ) -> ConceptResult:
-    """Steps 1, 2/3, 4 for a single concept."""
+    """Steps 1, 2/3, 4 for a single concept.
+
+    `text_center`, when given, de-means the Step 1 query before retrieval
+    (see cards.concepts.prompts.demean_query) -- an ablation toggle
+    (cfg.demean_query), not always applied, since it changes which
+    images get retrieved and therefore isn't free to turn on
+    unconditionally when comparing against prior runs/results.
+    """
     t_c = build_concept_query(concept, encoder)
+    if text_center is not None:
+        t_c = demean_query(t_c, text_center)
     present_indices, absent_indices = retrieve_concept_sets(cfg, pool, t_c)
     direction = estimate_direction(
         concept, pool.embeddings[present_indices], pool.embeddings[absent_indices]
@@ -191,7 +233,18 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
         cfg.pool_source,
     )
 
-    results = [process_concept(cfg, encoder, pool, concept) for concept in concepts]
+    text_center = None
+    if cfg.demean_query:
+        reference_concepts = resolve_demean_reference_concepts(cfg, concepts)
+        text_center = compute_text_center(reference_concepts, encoder)
+        log.info(
+            "demean_query enabled: text center computed from %d reference concepts",
+            len(reference_concepts),
+        )
+
+    results = [
+        process_concept(cfg, encoder, pool, concept, text_center=text_center) for concept in concepts
+    ]
 
     if cfg.orthogonalize and len(results) > 1:
         orthogonalized = lowdin_orthogonalize([r.direction for r in results])
