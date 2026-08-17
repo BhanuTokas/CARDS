@@ -88,6 +88,16 @@ def test_retrieve_concept_sets_stratified():
     assert len(present) == len(absent) == 4  # 2 per stratum x 2 strata
 
 
+def test_retrieve_concept_sets_aligned():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "aligned"}, "k": 3})
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+    assert set(present).isdisjoint(absent)
+
+
 def test_retrieve_concept_sets_rejects_unknown_strategy():
     pool = _make_pool(10)
     cfg = OmegaConf.create({"retrieval": {"strategy": "bogus"}, "k": 3})

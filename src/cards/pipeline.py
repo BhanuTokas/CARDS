@@ -35,6 +35,7 @@ from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
 from cards.encoders.base import ImageTextEncoder
 from cards.encoders.open_clip_encoder import OpenClipEncoder
+from cards.retrieval.aligned import aligned_retrieval
 from cards.retrieval.confound import matched_retrieval, stratified_retrieval
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.pool import CandidatePool
@@ -79,8 +80,8 @@ def retrieve_concept_sets(
     pool: CandidatePool,
     t_c: torch.Tensor,
 ) -> tuple[list[int], list[int]]:
-    """Steps 2/3: dispatches to naive / matched / stratified retrieval per
-    cfg.retrieval.strategy."""
+    """Steps 2/3: dispatches to naive / matched / stratified / aligned
+    retrieval per cfg.retrieval.strategy."""
     strategy = cfg.retrieval.strategy
     if strategy == "naive":
         return retrieve_top_bottom_k(pool, t_c, cfg.k)
@@ -90,6 +91,10 @@ def retrieve_concept_sets(
         return present_indices, absent_indices
     if strategy == "stratified":
         return stratified_retrieval(pool, t_c, cfg.k)
+    if strategy == "aligned":
+        present_indices, _ = retrieve_top_bottom_k(pool, t_c, cfg.k)
+        absent_indices = aligned_retrieval(pool, present_indices, t_c, cfg.k)
+        return present_indices, absent_indices
     raise ValueError(f"unknown retrieval strategy {strategy!r}")
 
 

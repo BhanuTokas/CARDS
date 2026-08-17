@@ -172,15 +172,28 @@ al. 2022). Comparing `t_c` directly against image embeddings crosses that
 gap; de-meaning subtracts a text-modality reference center from `t_c`
 before retrieval to counteract it (see
 `cards.concepts.prompts.demean_query`/`compute_text_center`, and
-`notes/pcbm_correlation_investigation.md`'s v8/v9 entries for the
-validation behind it — the strongest lever found there, and it stacks
-with an encoder swap to SigLIP rather than being redundant with it: v9
-reaches r=0.205 vs. v6's CLIP/no-demeaning baseline of r=0.120). Set
+`notes/pcbm_correlation_investigation.md`'s v8 entry for the validation
+behind it on CIFAR-100 — the strongest single lever found in that
+investigation with the default CLIP encoder: r=0.163 vs. 0.120 raw). Set
 `demean_query=false` to reproduce pre-de-meaning results for an ablation
 comparison. Only the text-side query is de-meaned — image embeddings
 don't need it: it's a no-op for `retrieve_top_bottom_k`'s ranking (a
 per-pool constant shift doesn't change `argsort`), and `matched_retrieval`'s
 own nearest-neighbor step never crosses modalities to begin with.
+
+*Caveat — not a universal encoder booster.* On CIFAR-100, de-meaning
+compounds positively with a SigLIP encoder swap (v9: r=0.205). On CUB it
+does the opposite: de-meaning + SigLIP degrades a strong raw SigLIP
+result (r=0.130) down to noise (r=0.061), and this isn't fixable by
+using a better/larger de-meaning reference set (tested up to 100
+concepts — still net-negative; see v10 in the notes). The likely reason:
+de-meaning's benefit depends on how much real modality-gap noise the
+specific encoder/dataset/concept-vocabulary combination has left to
+correct, which isn't knowable in advance. `demean_query=true` stays the
+default because it's neutral-to-positive for CARDS' actual default
+encoder (CLIP) on every dataset tested so far — but if you swap to
+SigLIP, validate `demean_query` on your own data before assuming it
+still helps, don't just carry the CIFAR-100 result over.
 
 The de-meaning reference center needs a broad, stable concept set, not
 just the concepts being scored in one run — `demean_reference_concepts`

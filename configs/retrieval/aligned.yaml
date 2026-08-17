@@ -1,0 +1,8 @@
+# Step 3 alternative: greedy negative selection that directly optimizes
+# cos(mean(P_c) - mean(N_c), t_c) instead of ranking candidates
+# independently by similarity to t_c. See cards.retrieval.aligned for the
+# rationale and the noise-chasing caveat -- validate against an external
+# signal (e.g. a CARDS-vs-black-box-weight correlation) before trusting
+# it over matched/naive, not just retrieval-purity metrics.
+name: aligned
+strategy: aligned
