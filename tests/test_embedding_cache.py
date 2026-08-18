@@ -78,6 +78,26 @@ def test_cache_key_for_differs_by_encoder():
     assert cache_key_for(cfg_clip) != cache_key_for(cfg_siglip)
 
 
+def test_cache_key_for_handles_encoder_configs_with_different_schemas():
+    # Regression test: cache_key_for used to hard-code cfg.encoder.pretrained,
+    # which OpenClipEncoder-based configs have but PerceptionEncoder's
+    # (model_name + perception_models_path, no `pretrained`) doesn't --
+    # raised ConfigAttributeError the first time a non-OpenClip encoder
+    # was actually run through the pipeline.
+    base = {
+        "dataset": {"name": "cifar10", "root": "x", "variant": "cifar10"},
+        "pool_source": "val",
+    }
+    cfg_open_clip = OmegaConf.create({**base, "encoder": {"model_name": "ViT-B-32", "pretrained": "openai"}})
+    cfg_perception = OmegaConf.create(
+        {**base, "encoder": {"model_name": "PE-Core-B16-224", "perception_models_path": "../perception_models"}}
+    )
+
+    key = cache_key_for(cfg_perception)  # must not raise
+    assert isinstance(key, str) and len(key) > 0
+    assert key != cache_key_for(cfg_open_clip)
+
+
 def test_cache_key_for_differs_by_dataset_and_pool_source():
     encoder = {"encoder": {"model_name": "ViT-B-32", "pretrained": "openai"}}
     cfg_val = OmegaConf.create(

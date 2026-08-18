@@ -1,3 +1,5 @@
 name: siglip
+_target_: cards.encoders.open_clip_encoder.OpenClipEncoder
 model_name: ViT-B-16-SigLIP
 pretrained: webli
+device: ${device}

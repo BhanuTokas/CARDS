@@ -34,7 +34,6 @@ from cards.data.datasets import load_cifar, load_cub, load_metadataset
 from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
 from cards.encoders.base import ImageTextEncoder
-from cards.encoders.open_clip_encoder import OpenClipEncoder
 from cards.retrieval.aligned import aligned_retrieval
 from cards.retrieval.confound import matched_retrieval, stratified_retrieval
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
@@ -180,6 +179,16 @@ def normalize_score(
     raise ValueError(f"unknown normalization method {method!r}")
 
 
+def instantiate_encoder(cfg: DictConfig) -> ImageTextEncoder:
+    """Step 1/2 encoder, pluggable via cfg.encoder's `_target_` -- same
+    strip-`name`-then-hydra.utils.instantiate pattern as
+    instantiate_model, so adding a new encoder (e.g. Perception Encoder)
+    is a new configs/encoder/*.yaml, not a code change here.
+    """
+    encoder_cfg = {k: v for k, v in cfg.encoder.items() if k != "name"}
+    return hydra.utils.instantiate(encoder_cfg)
+
+
 def instantiate_model(cfg: DictConfig):
     """Steps 6-7 black-box model, or None if cfg.model.name == 'none'.
 
@@ -227,7 +236,7 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
     if not concepts:
         raise ValueError("cfg.concepts must be a non-empty list")
 
-    encoder = OpenClipEncoder(cfg.encoder.model_name, cfg.encoder.pretrained, device=cfg.device)
+    encoder = instantiate_encoder(cfg)
 
     pairs = load_dataset_pool(cfg)
     pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)

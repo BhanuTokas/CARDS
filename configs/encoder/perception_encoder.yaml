@@ -1,0 +1,14 @@
+# Meta FAIR's Perception Encoder (PE-Core). Needs: `uv sync --extra
+# perception` (einops/timm/ftfy/regex), and facebookresearch/
+# perception_models checked out as a sibling directory -- see
+# cards.encoders.perception_encoder for what's required and why (not
+# pip-installed, to avoid its requirements.txt's heavy/pinned
+# research-stack dependencies). model_name is any PE-Core checkpoint
+# name, e.g. PE-Core-T16-384 (fastest) through PE-Core-G14-448 (largest);
+# B16-224 is a reasonable default comparable in spirit to clip.yaml's
+# ViT-B-32.
+name: perception_encoder
+_target_: cards.encoders.perception_encoder.PerceptionEncoder
+model_name: PE-Core-B16-224
+perception_models_path: ../perception_models
+device: ${device}

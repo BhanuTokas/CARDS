@@ -30,6 +30,21 @@ dependencies = [
 pcbm = [
     "pytorchcv>=0.0.67",
 ]
+# Only needed by cards.encoders.perception_encoder (Meta FAIR's Perception
+# Encoder). The facebookresearch/perception_models repo itself is NOT a
+# pip dependency here -- expected as a sibling checkout added to sys.path
+# at runtime, not `pip install -e .`'d, since that repo's requirements.txt
+# pulls in an exact-pinned numpy plus a large research/training stack this
+# project doesn't need just for inference -- see
+# cards.encoders.perception_encoder's docstring for the full reasoning.
+# These four are the actual runtime deps of core.vision_encoder.pe/
+# transforms/tokenizer, traced directly from their imports.
+perception = [
+    "einops>=0.8",
+    "timm>=1.0",
+    "ftfy>=6.0",
+    "regex>=2023.0",
+]
 
 [dependency-groups]
 dev = [

@@ -19,6 +19,7 @@ from cards.directions.estimate import ConceptDirection
 from cards.pipeline import (
     ConceptResult,
     compute_delta_c,
+    instantiate_encoder,
     instantiate_model,
     load_and_preprocess,
     load_dataset_pool,
@@ -333,6 +334,35 @@ def test_save_directions_round_trips(tmp_path):
     loaded = torch.load(path, weights_only=False)
     assert loaded["dog"]["magnitude"] == pytest.approx(2.0)
     assert torch.allclose(loaded["dog"]["unit_vector"], torch.tensor([1.0, 0.0]))
+
+
+# ---- instantiate_encoder ----
+
+
+class _FakeEncoder:
+    """A stand-in _target_ that -- like the real OpenClipEncoder/
+    PerceptionEncoder -- doesn't accept a `name` kwarg, so this catches
+    the same name-leaking bug instantiate_model already guards against."""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+
+
+def test_instantiate_encoder_strips_name_before_instantiating():
+    cfg = OmegaConf.create(
+        {
+            "encoder": {
+                "name": "fake",
+                "_target_": "test_pipeline._FakeEncoder",
+                "model_name": "some-model",
+            }
+        }
+    )
+
+    encoder = instantiate_encoder(cfg)
+
+    assert isinstance(encoder, _FakeEncoder)
+    assert encoder.model_name == "some-model"
 
 
 # ---- instantiate_model ----

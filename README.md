@@ -142,8 +142,17 @@ single-run job's config snapshot + logs go under `outputs/<date>/<time>/`
 
 Config groups currently defined:
 
-- `configs/encoder/` — `clip` (default), `open_clip_h`, `siglip`
-- `configs/retrieval/` — `matched` (default), `stratified`, `naive`
+- `configs/encoder/` — `clip` (default), `open_clip_h`, `siglip`, `perception_encoder`
+  (Meta FAIR's Perception Encoder — needs `uv sync --extra perception` and
+  the `facebookresearch/perception_models` repo checked out as a sibling
+  directory, NOT pip-installed; see `cards.encoders.perception_encoder`
+  for why)
+- `configs/retrieval/` — `matched` (default), `stratified`, `naive`, `aligned`
+  (`aligned` directly optimizes the retrieved negative set's alignment
+  with the concept query rather than ranking candidates independently —
+  see `cards.retrieval.aligned` and `notes/pcbm_correlation_investigation.md`'s
+  v11 entry for a validated but nuanced result before trusting its raw
+  correlation numbers)
 - `configs/dataset/` — `cifar10` (default), `cifar100`, `cub`, `metadataset`, `broden`
   (`broden` isn't usable as a retrieval pool through `run_attribution.py` —
   it's ground-truth pairs, not a pool; see `cards.data.datasets.load_broden`
@@ -205,6 +214,39 @@ stand-in, not specific to your concept bank. Pass
 `demean_reference_concepts='[concept1,concept2,...]'` explicitly (e.g.
 the full concept bank your run's concepts are drawn from) for a better
 estimate than the generic fallback.
+
+**Perception Encoder** (`encoder=perception_encoder`): Meta FAIR's
+PE-Core, a CLIP-style joint image-text encoder, added as a fourth
+encoder option alongside CLIP/OpenCLIP-H/SigLIP. Two things make this
+different from the other encoders:
+
+- It's not on PyPI and not installed via `pip`/`uv` at all — like
+  `cards.models.posthoc_cbm`'s handling of the `post_hoc_cbm` repo, it's
+  expected as a sibling checkout
+  (`git clone https://github.com/facebookresearch/perception_models`,
+  or point `perception_models_path` at wherever you put it) added to
+  `sys.path` at runtime. This is deliberate, not a shortcut: that repo's
+  `requirements.txt` pulls in an exact-pinned `numpy==2.1.2` plus a large
+  research/training stack (wandb, lm-eval, decord, webdataset,
+  datatrove, viztracer, …) meant for their full training pipeline, none
+  of which is needed just to run inference with the encoder — installing
+  all of that via `pip install -e .` risks destabilizing this project's
+  own environment. `uv sync --extra perception` installs the actual
+  runtime deps of `core.vision_encoder.pe`/`transforms`/`tokenizer`
+  (traced directly from their imports): einops, timm, ftfy, regex.
+- Its code is under that repo's `LICENSE.PE` (plain Apache 2.0) — the
+  restrictive "FAIR Noncommercial Research License" (`LICENSE.PLM`)
+  covers a different part of that repo (their language model), not the
+  vision-language encoder used here. Checked both license files directly
+  before adding this.
+
+`model_name` is any PE-Core checkpoint name (`PE-Core-T16-384` through
+`PE-Core-G14-448`, larger = better/slower); `PE-Core-B16-224` is the
+default. Not yet exercised end-to-end in this project (no live
+correlation-benchmark results the way CLIP/OpenCLIP-H/SigLIP have) — the
+adapter's dependency-free logic (batching, `embed_dim` probing) is unit
+tested, but constructing a real `PerceptionEncoder` needs the sibling
+repo and a real checkpoint download, so that part is integration-only.
 
 ## Validation scripts
 

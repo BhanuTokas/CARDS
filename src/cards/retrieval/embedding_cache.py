@@ -27,11 +27,20 @@ log = logging.getLogger(__name__)
 def cache_key_for(cfg: DictConfig) -> str:
     """Identifies the (dataset, split, encoder) combination that produces a
     given set of embeddings -- independent of retrieval/normalization/model,
-    which don't affect the pool."""
+    which don't affect the pool.
+
+    Uses the *entire* cfg.encoder dict, not hand-picked fields -- different
+    encoder adapters don't share a field schema (OpenClipEncoder-based
+    configs have model_name+pretrained; PerceptionEncoder has model_name+
+    perception_models_path instead), so cherry-picking fields here
+    couples this module to one adapter's shape. Same generic treatment
+    cfg.dataset already gets, for the same reason (dataset configs don't
+    share a schema either).
+    """
     payload = {
         "dataset": OmegaConf.to_container(cfg.dataset, resolve=True),
         "pool_source": cfg.pool_source,
-        "encoder": {"model_name": cfg.encoder.model_name, "pretrained": cfg.encoder.pretrained},
+        "encoder": OmegaConf.to_container(cfg.encoder, resolve=True),
     }
     raw = json.dumps(payload, sort_keys=True)
     return hashlib.sha1(raw.encode()).hexdigest()[:16]

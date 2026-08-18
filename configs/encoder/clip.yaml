@@ -1,4 +1,6 @@
-# Default encoder (Step 2). Ablated against open_clip_h.yaml / siglip.yaml (Section 3).
+# Default encoder (Step 2). Ablated against open_clip_h.yaml / siglip.yaml / perception_encoder.yaml (Section 3).
 name: clip
+_target_: cards.encoders.open_clip_encoder.OpenClipEncoder
 model_name: ViT-B-32
 pretrained: openai
+device: ${device}
