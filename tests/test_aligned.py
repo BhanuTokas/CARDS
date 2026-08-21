@@ -103,3 +103,65 @@ def test_aligned_retrieval_rejects_too_few_candidates():
     pool = _pool([[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]])
     with pytest.raises(ValueError):
         aligned_retrieval(pool, [0], torch.tensor([1.0, 0.0]), k=5)
+
+
+def test_magnitude_penalty_blocks_a_high_cost_low_gain_swap():
+    # Found by random search for a case where an unconstrained swap
+    # improves cosine only marginally (-0.8836 -> -0.8745) while growing
+    # |d_c| to ~2.8x the naive warm start's own magnitude. A strong
+    # magnitude_penalty should reject that trade and stay at the naive
+    # warm start, while magnitude_penalty=0 (the default) takes it.
+    pool = _pool(
+        [
+            [-6.1158, 0.2408],   # present (index 0)
+            [1.3314, -2.2318],   # 1
+            [11.1137, -0.5023],  # 2
+            [13.4375, -1.0240],  # 3
+            [11.8119, -0.2903],  # 4
+            [4.1085, -0.2258],   # 5
+            [-5.0880, 1.1082],   # 6
+            [-0.0449, 1.4585],   # 7
+            [-6.0757, -0.0607],  # 8
+            [7.1254, 0.4732],    # 9
+            [-4.1653, 1.0256],   # 10
+            [-4.4766, 0.4343],   # 11
+        ]
+    )
+    t_c = torch.tensor([1.0, 0.0])
+    present_indices = [0]
+    k = 2
+
+    naive_warm_start = {8, 6}  # what bottom-2-by-cosine picks here
+
+    unconstrained = aligned_retrieval(pool, present_indices, t_c, k, magnitude_penalty=0.0)
+    penalized = aligned_retrieval(pool, present_indices, t_c, k, magnitude_penalty=2.0)
+
+    assert set(unconstrained) == {6, 10}  # takes the high-magnitude trade
+    assert set(penalized) == naive_warm_start  # rejects it, stays at naive
+
+    unconstrained_score = _cosine_align(pool, present_indices, unconstrained, t_c)
+    penalized_score = _cosine_align(pool, present_indices, penalized, t_c)
+    naive_score = _cosine_align(pool, present_indices, list(naive_warm_start), t_c)
+    assert unconstrained_score == pytest.approx(-0.874458, abs=1e-4)
+    assert penalized_score == pytest.approx(naive_score, abs=1e-6)
+
+
+def test_magnitude_penalty_zero_matches_unpenalized_behavior():
+    # magnitude_penalty=0.0 (the default) must reproduce the exact
+    # already-validated unconstrained result -- this is a backward-
+    # compatibility guarantee, not just a sanity check.
+    pool = _pool(
+        [
+            [10.0, 0.0],
+            [-9.0, 3.0],
+            [-9.0, 4.0],
+            [-9.0, -4.5],
+        ]
+    )
+    t_c = torch.tensor([1.0, 0.0])
+    present_indices = [0]
+
+    default_call = aligned_retrieval(pool, present_indices, t_c, k=2)
+    explicit_zero = aligned_retrieval(pool, present_indices, t_c, k=2, magnitude_penalty=0.0)
+
+    assert set(default_call) == set(explicit_zero) == {2, 3}

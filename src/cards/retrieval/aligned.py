@@ -54,6 +54,37 @@ revisited: compare on a magnitude-robust statistic (e.g. Spearman on
 winsorized scores) and consider having the search penalize `|d_c|`
 growth directly, which might separate the real gain from the inflation
 cleanly rather than needing to infer it post-hoc.
+
+`magnitude_penalty` (added when this was revisited) implements that
+last suggestion directly: the search's per-swap objective becomes
+`cos(d_c, t_c) - magnitude_penalty * max(0, |d_c|/|d_c_naive| - 1)`,
+where `|d_c_naive|` is the warm start's own magnitude (fixed for the
+whole search, not a moving target) -- so swaps are only penalized for
+growing the diff-of-means magnitude *beyond* what naive bottom-k already
+had, not for magnitude in general. Default 0.0 exactly reproduces the
+unconstrained behavior validated above (the penalty term is then always
+zero, so the objective is pure cosine, unchanged).
+
+Tested (v18): works exactly as designed on synthetic cases (see
+tests/test_aligned.py) but has **zero effect on the real benchmark** --
+every magnitude_penalty value from 0.02 to 1.0 produced output
+byte-identical to the unconstrained baseline (CIFAR-100+SigLIP, all 100
+classes, k=30). Reason: on real data the search improves cosine mainly
+by *canceling off-axis components*, which shrinks `|d_c|` (mean ratio
+0.388 vs. the naive baseline) rather than growing it -- so the
+`max(0, ratio - 1)` penalty is essentially always zero regardless of its
+weight. This also falsifies the premise this parameter was built on:
+v11's diagnosed inflation is in the downstream *black-box raw score*,
+not embedding-space `|d_c|` -- different quantities, conflated when this
+was designed. A smaller embedding-space separation can still produce a
+larger raw-score swing depending on *which* specific images get
+selected, not how far apart the aggregate means are. Output-space
+magnitude isn't observable during retrieval without circularity (Step 4
+scoring runs after Step 3 retrieval), so this approach cannot reach the
+actual mechanism. Kept in the codebase as a correctly-implemented,
+tested, but practically inert option; see the v18 entry in
+notes/pcbm_correlation_investigation.md for the full negative result and
+what a better-targeted fix would need to look like.
 """
 
 from __future__ import annotations
@@ -75,16 +106,25 @@ def aligned_retrieval(
     t_c: torch.Tensor,
     k: int,
     max_iters: int = 5,
+    magnitude_penalty: float = 0.0,
 ) -> list[int]:
     """Select N_c (size `k`) to maximize cos(mean(P_c) - mean(N_c), t_c).
 
     Greedy local search: start from bottom-k by cosine to t_c (already
     optimal for the linear term t_c . d_c), then repeatedly try replacing
     each current member with whichever out-of-set candidate most improves
-    the cosine objective, accepting only strict improvements. Stops early
-    if a full pass makes no swap. `max_iters` bounds worst-case passes
-    over all k current members (each pass is one vectorized
-    cosine-over-all-candidates computation per member, not one-at-a-time).
+    the objective, accepting only strict improvements. Stops early if a
+    full pass makes no swap. `max_iters` bounds worst-case passes over all
+    k current members (each pass is one vectorized computation over all
+    candidates per member, not one-at-a-time).
+
+    `magnitude_penalty` (default 0.0, pure cosine objective, matches the
+    originally validated behavior) trades off the cosine objective against
+    `|d_c|` growth beyond the warm start's own magnitude: objective =
+    cos(d_c, t_c) - magnitude_penalty * max(0, |d_c|/|d_c_naive| - 1).
+    Growth *below* the naive baseline is never penalized -- only swaps
+    that push the diff-of-means magnitude past what naive bottom-k already
+    had pay a cost. See the module docstring's caveat for why this exists.
     """
     if k <= 0:
         raise ValueError(f"k must be positive, got {k}")
@@ -106,6 +146,7 @@ def aligned_retrieval(
     current_set = set(current)
 
     mean_absent = pool.embeddings[torch.tensor(current, dtype=torch.long)].mean(dim=0)
+    naive_norm = (mean_present - mean_absent).norm().item()
     current_score = _cosine_align(mean_present, mean_absent, t_c_unit)
 
     for _ in range(max_iters):
@@ -123,7 +164,13 @@ def aligned_retrieval(
             out_embeddings = pool.embeddings[torch.tensor(out_of_set, dtype=torch.long)]
             trial_means = (mean_without_member.unsqueeze(0) * (k - 1) + out_embeddings) / k
             trial_d_c = mean_present.unsqueeze(0) - trial_means
-            trial_scores = F.cosine_similarity(trial_d_c, t_c_unit.unsqueeze(0).expand_as(trial_d_c), dim=1)
+            trial_cosines = F.cosine_similarity(trial_d_c, t_c_unit.unsqueeze(0).expand_as(trial_d_c), dim=1)
+            if magnitude_penalty > 0.0:
+                trial_norms = trial_d_c.norm(dim=1)
+                trial_penalties = magnitude_penalty * torch.clamp(trial_norms / naive_norm - 1.0, min=0.0)
+                trial_scores = trial_cosines - trial_penalties
+            else:
+                trial_scores = trial_cosines
             best_score, best_local_idx = trial_scores.max(dim=0)
 
             if best_score.item() > current_score:
