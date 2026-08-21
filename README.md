@@ -147,12 +147,24 @@ Config groups currently defined:
   the `facebookresearch/perception_models` repo checked out as a sibling
   directory, NOT pip-installed; see `cards.encoders.perception_encoder`
   for why)
-- `configs/retrieval/` — `matched` (default), `stratified`, `naive`, `aligned`
+- `configs/retrieval/` — `matched` (default), `stratified`, `naive`, `aligned`,
+  `aligned_symmetric`, `aligned_symmetric_constrained`
   (`aligned` directly optimizes the retrieved negative set's alignment
   with the concept query rather than ranking candidates independently —
   see `cards.retrieval.aligned` and `notes/pcbm_correlation_investigation.md`'s
   v11 entry for a validated but nuanced result before trusting its raw
-  correlation numbers)
+  correlation numbers. `aligned_symmetric` extends the same search to the
+  positive set too, jointly optimizing both — see
+  `cards.retrieval.symmetric_aligned` and the v12 entry, which found it
+  underperforms one-sided `aligned` on every correlation metric because
+  unrestricted P_c search trades individually concept-relevant images
+  for ones that merely improve the aggregate fit.
+  `aligned_symmetric_constrained` restricts P_c's swap candidates to
+  individually-relevant images to fix that — v13 confirms the mechanism
+  diagnosis but found no tested amount of P_c search freedom beats
+  leaving P_c fully fixed, i.e. plain `aligned`. Both symmetric variants
+  are kept as documented, non-recommended options — `aligned` remains
+  the best-validated search-based strategy)
 - `configs/dataset/` — `cifar10` (default), `cifar100`, `cub`, `metadataset`, `broden`
   (`broden` isn't usable as a retrieval pool through `run_attribution.py` —
   it's ground-truth pairs, not a pool; see `cards.data.datasets.load_broden`

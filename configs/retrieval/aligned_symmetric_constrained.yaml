@@ -1,0 +1,21 @@
+# Fix attempt for aligned_symmetric's diagnosed failure mode (see
+# notes/pcbm_correlation_investigation.md's "Diagnostics on v12"
+# addendum): unconstrained P_c search replaces ~85% of P_c with images
+# that are individually barely concept-relevant (mean cosine-to-t_c
+# 0.020), just because that improves the aggregate cos(d_c, t_c) fit.
+# This variant restricts P_c swap-in candidates to the top
+# (present_pool_multiplier * k) pool images by individual relevance to
+# t_c, so the search can still improve P_c's aggregate fit but can't
+# trade away individual relevance to do it. N_c is left unrestricted
+# (diagnosis found N_c's churn isn't the problem). See
+# cards.retrieval.symmetric_aligned's present_candidate_pool_size.
+# Validated (v13 in the same notes file): confirms the diagnosis
+# (protecting P_c relevance recovers the correlation lost in v12), but
+# NO tested multiplier > 1 beat plain `aligned`. multiplier=1 (P_c fully
+# pinned, i.e. this literally becomes one-sided aligned_retrieval) was
+# the best setting found. This config's default (multiplier=3) is NOT
+# recommended over `aligned` -- kept for completeness / further
+# experimentation, not as a suggested choice.
+name: aligned_symmetric_constrained
+strategy: aligned_symmetric_constrained
+present_pool_multiplier: 3

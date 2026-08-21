@@ -1,0 +1,9 @@
+# Step 2/3 alternative: jointly optimizes BOTH P_c and N_c (not just
+# N_c, unlike `aligned`) to maximize cos(mean(P_c) - mean(N_c), t_c).
+# See cards.retrieval.symmetric_aligned and
+# notes/pcbm_correlation_investigation.md's v12 entry -- validated on
+# CIFAR-100+SigLIP and found to underperform one-sided `aligned` on
+# every metric. Kept as a documented experimental option, not
+# recommended over `aligned`.
+name: aligned_symmetric
+strategy: aligned_symmetric

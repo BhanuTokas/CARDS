@@ -99,6 +99,37 @@ def test_retrieve_concept_sets_aligned():
     assert set(present).isdisjoint(absent)
 
 
+def test_retrieve_concept_sets_aligned_symmetric():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "aligned_symmetric"}, "k": 3})
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+    assert set(present).isdisjoint(absent)
+
+
+def test_retrieve_concept_sets_aligned_symmetric_constrained():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create(
+        {"retrieval": {"strategy": "aligned_symmetric_constrained", "present_pool_multiplier": 3}, "k": 3}
+    )
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+    assert set(present).isdisjoint(absent)
+
+
+def test_retrieve_concept_sets_aligned_symmetric_constrained_default_multiplier():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "aligned_symmetric_constrained"}, "k": 3})
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+
+
 def test_retrieve_concept_sets_rejects_unknown_strategy():
     pool = _make_pool(10)
     cfg = OmegaConf.create({"retrieval": {"strategy": "bogus"}, "k": 3})

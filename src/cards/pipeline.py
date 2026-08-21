@@ -39,6 +39,7 @@ from cards.retrieval.confound import matched_retrieval, stratified_retrieval
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.pool import CandidatePool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
+from cards.retrieval.symmetric_aligned import symmetric_aligned_retrieval
 from cards.utils.seed import set_seed
 
 log = logging.getLogger(__name__)
@@ -79,8 +80,9 @@ def retrieve_concept_sets(
     pool: CandidatePool,
     t_c: torch.Tensor,
 ) -> tuple[list[int], list[int]]:
-    """Steps 2/3: dispatches to naive / matched / stratified / aligned
-    retrieval per cfg.retrieval.strategy."""
+    """Steps 2/3: dispatches to naive / matched / stratified / aligned /
+    aligned_symmetric / aligned_symmetric_constrained retrieval per
+    cfg.retrieval.strategy."""
     strategy = cfg.retrieval.strategy
     if strategy == "naive":
         return retrieve_top_bottom_k(pool, t_c, cfg.k)
@@ -94,6 +96,13 @@ def retrieve_concept_sets(
         present_indices, _ = retrieve_top_bottom_k(pool, t_c, cfg.k)
         absent_indices = aligned_retrieval(pool, present_indices, t_c, cfg.k)
         return present_indices, absent_indices
+    if strategy == "aligned_symmetric":
+        return symmetric_aligned_retrieval(pool, t_c, cfg.k)
+    if strategy == "aligned_symmetric_constrained":
+        pool_multiplier = cfg.retrieval.get("present_pool_multiplier", 3)
+        return symmetric_aligned_retrieval(
+            pool, t_c, cfg.k, present_candidate_pool_size=pool_multiplier * cfg.k
+        )
     raise ValueError(f"unknown retrieval strategy {strategy!r}")
 
 
