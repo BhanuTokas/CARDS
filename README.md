@@ -142,19 +142,123 @@ single-run job's config snapshot + logs go under `outputs/<date>/<time>/`
 
 Config groups currently defined:
 
-- `configs/encoder/` — `clip` (default), `open_clip_h`, `siglip`
-- `configs/retrieval/` — `matched` (default), `stratified`, `naive`
+- `configs/encoder/` — `clip` (default), `open_clip_h`, `siglip`, `perception_encoder`
+  (Meta FAIR's Perception Encoder — needs `uv sync --extra perception` and
+  the `facebookresearch/perception_models` repo checked out as a sibling
+  directory, NOT pip-installed; see `cards.encoders.perception_encoder`
+  for why)
+- `configs/retrieval/` — `matched` (default), `stratified`, `naive`, `aligned`,
+  `aligned_symmetric`, `aligned_symmetric_constrained`
+  (`aligned` directly optimizes the retrieved negative set's alignment
+  with the concept query rather than ranking candidates independently —
+  see `cards.retrieval.aligned` and `notes/pcbm_correlation_investigation.md`'s
+  v11 entry for a validated but nuanced result before trusting its raw
+  correlation numbers. `aligned_symmetric` extends the same search to the
+  positive set too, jointly optimizing both — see
+  `cards.retrieval.symmetric_aligned` and the v12 entry, which found it
+  underperforms one-sided `aligned` on every correlation metric because
+  unrestricted P_c search trades individually concept-relevant images
+  for ones that merely improve the aggregate fit.
+  `aligned_symmetric_constrained` restricts P_c's swap candidates to
+  individually-relevant images to fix that — v13 confirms the mechanism
+  diagnosis but found no tested amount of P_c search freedom beats
+  leaving P_c fully fixed, i.e. plain `aligned`. Both symmetric variants
+  are kept as documented, non-recommended options — `aligned` remains
+  the best-validated search-based strategy)
 - `configs/dataset/` — `cifar10` (default), `cifar100`, `cub`, `metadataset`, `broden`
   (`broden` isn't usable as a retrieval pool through `run_attribution.py` —
   it's ground-truth pairs, not a pool; see `cards.data.datasets.load_broden`
   and the validation scripts below instead)
 - `configs/normalization/` — `variance` (default), `embedding_distance`
-- `configs/model/` — `none` (default, skips Steps 6-7), `pcbm_cub`
+- `configs/model/` — `none` (default, skips Steps 6-7), `pcbm_cub`, `pcbm_cifar100`
 
 Note: `hydra.job.chdir` is explicitly set to `false` in `config.yaml` — by
 default Hydra changes the process's working directory to the run's output
 folder, which would break the `../Datasets/...` relative paths used in
 `configs/dataset/*.yaml`.
+
+**Embedding cache**: candidate pool embeddings are cached to disk under
+`cache_dir` (default `embedding_cache/`, override with `cache_dir=...`),
+keyed on the `(dataset, pool_source, encoder)` combination — retrieval
+strategy, normalization, and model don't affect the pool, so a `-m` sweep
+over those axes reuses one cached encoding pass per distinct dataset+encoder
+instead of paying for it on every job. Deleting `embedding_cache/` (or a
+single stale `.pt` file inside it) forces a recompute; the cache also
+self-invalidates if the underlying `(dataset, split)` pool contents change.
+
+**Modality-gap de-meaning** (`demean_query`, default `true`): CLIP's image
+and text embeddings, even both L2-normalized into the same space, cluster
+in separate, non-overlapping regions (the "modality gap" — see Liang et
+al. 2022). Comparing `t_c` directly against image embeddings crosses that
+gap; de-meaning subtracts a text-modality reference center from `t_c`
+before retrieval to counteract it (see
+`cards.concepts.prompts.demean_query`/`compute_text_center`, and
+`notes/pcbm_correlation_investigation.md`'s v8 entry for the validation
+behind it on CIFAR-100 — the strongest single lever found in that
+investigation with the default CLIP encoder: r=0.163 vs. 0.120 raw). Set
+`demean_query=false` to reproduce pre-de-meaning results for an ablation
+comparison. Only the text-side query is de-meaned — image embeddings
+don't need it: it's a no-op for `retrieve_top_bottom_k`'s ranking (a
+per-pool constant shift doesn't change `argsort`), and `matched_retrieval`'s
+own nearest-neighbor step never crosses modalities to begin with.
+
+*Caveat — not a universal encoder booster.* On CIFAR-100, de-meaning
+compounds positively with a SigLIP encoder swap (v9: r=0.205). On CUB it
+does the opposite: de-meaning + SigLIP degrades a strong raw SigLIP
+result (r=0.130) down to noise (r=0.061), and this isn't fixable by
+using a better/larger de-meaning reference set (tested up to 100
+concepts — still net-negative; see v10 in the notes). The likely reason:
+de-meaning's benefit depends on how much real modality-gap noise the
+specific encoder/dataset/concept-vocabulary combination has left to
+correct, which isn't knowable in advance. `demean_query=true` stays the
+default because it's neutral-to-positive for CARDS' actual default
+encoder (CLIP) on every dataset tested so far — but if you swap to
+SigLIP, validate `demean_query` on your own data before assuming it
+still helps, don't just carry the CIFAR-100 result over.
+
+The de-meaning reference center needs a broad, stable concept set, not
+just the concepts being scored in one run — `demean_reference_concepts`
+defaults to `concepts` itself when that's 10+ entries, and falls back to
+a built-in generic vocabulary (`cards.concepts.prompts.
+GENERIC_REFERENCE_CONCEPTS`, 30 diverse everyday nouns) for smaller runs,
+logging a warning every time that fallback triggers since it's a generic
+stand-in, not specific to your concept bank. Pass
+`demean_reference_concepts='[concept1,concept2,...]'` explicitly (e.g.
+the full concept bank your run's concepts are drawn from) for a better
+estimate than the generic fallback.
+
+**Perception Encoder** (`encoder=perception_encoder`): Meta FAIR's
+PE-Core, a CLIP-style joint image-text encoder, added as a fourth
+encoder option alongside CLIP/OpenCLIP-H/SigLIP. Two things make this
+different from the other encoders:
+
+- It's not on PyPI and not installed via `pip`/`uv` at all — like
+  `cards.models.posthoc_cbm`'s handling of the `post_hoc_cbm` repo, it's
+  expected as a sibling checkout
+  (`git clone https://github.com/facebookresearch/perception_models`,
+  or point `perception_models_path` at wherever you put it) added to
+  `sys.path` at runtime. This is deliberate, not a shortcut: that repo's
+  `requirements.txt` pulls in an exact-pinned `numpy==2.1.2` plus a large
+  research/training stack (wandb, lm-eval, decord, webdataset,
+  datatrove, viztracer, …) meant for their full training pipeline, none
+  of which is needed just to run inference with the encoder — installing
+  all of that via `pip install -e .` risks destabilizing this project's
+  own environment. `uv sync --extra perception` installs the actual
+  runtime deps of `core.vision_encoder.pe`/`transforms`/`tokenizer`
+  (traced directly from their imports): einops, timm, ftfy, regex.
+- Its code is under that repo's `LICENSE.PE` (plain Apache 2.0) — the
+  restrictive "FAIR Noncommercial Research License" (`LICENSE.PLM`)
+  covers a different part of that repo (their language model), not the
+  vision-language encoder used here. Checked both license files directly
+  before adding this.
+
+`model_name` is any PE-Core checkpoint name (`PE-Core-T16-384` through
+`PE-Core-G14-448`, larger = better/slower); `PE-Core-B16-224` is the
+default. Not yet exercised end-to-end in this project (no live
+correlation-benchmark results the way CLIP/OpenCLIP-H/SigLIP have) — the
+adapter's dependency-free logic (batching, `embed_dim` probing) is unit
+tested, but constructing a real `PerceptionEncoder` needs the sibling
+repo and a real checkpoint download, so that part is integration-only.
 
 ## Validation scripts
 

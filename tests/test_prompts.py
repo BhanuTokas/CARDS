@@ -6,10 +6,17 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
 import torch
 import torch.nn.functional as F
 
-from cards.concepts.prompts import DEFAULT_TEMPLATES, build_concept_bank, build_concept_query
+from cards.concepts.prompts import (
+    DEFAULT_TEMPLATES,
+    build_concept_bank,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 
 
 class LookupTextEncoder:
@@ -62,3 +69,57 @@ def test_build_concept_bank_matches_individual_queries():
 def test_default_templates_use_concept_placeholder():
     for template in DEFAULT_TEMPLATES:
         assert "{concept}" in template
+
+
+# ---- compute_text_center ----
+
+
+def test_compute_text_center_matches_manual_mean():
+    encoder = LookupTextEncoder()
+    concepts = [f"concept_{i}" for i in range(12)]
+
+    center = compute_text_center(concepts, encoder)
+
+    expected = torch.stack([build_concept_query(c, encoder) for c in concepts]).mean(dim=0)
+    assert torch.allclose(center, expected)
+
+
+def test_compute_text_center_not_renormalized():
+    # a mean of unit vectors pointing in varied directions has norm < 1 in
+    # general -- confirms this is left as an offset, not forced back onto
+    # the unit sphere like build_concept_query's result is.
+    encoder = LookupTextEncoder()
+    concepts = [f"concept_{i}" for i in range(12)]
+
+    center = compute_text_center(concepts, encoder)
+
+    assert center.norm().item() < 1.0 - 1e-4
+
+
+def test_compute_text_center_rejects_too_small_reference_set():
+    encoder = LookupTextEncoder()
+
+    with pytest.raises(ValueError):
+        compute_text_center(["dog", "cat"], encoder)
+
+
+# ---- demean_query ----
+
+
+def test_demean_query_subtracts_center():
+    t_c = torch.tensor([1.0, 2.0, 3.0])
+    text_center = torch.tensor([0.5, 0.5, 0.5])
+
+    result = demean_query(t_c, text_center)
+
+    assert torch.allclose(result, torch.tensor([0.5, 1.5, 2.5]))
+
+
+def test_demean_query_not_renormalized():
+    t_c = torch.tensor([1.0, 0.0, 0.0])
+    text_center = torch.tensor([0.9, 0.0, 0.0])
+
+    result = demean_query(t_c, text_center)
+
+    assert torch.allclose(result, torch.tensor([0.1, 0.0, 0.0]))
+    assert not torch.isclose(result.norm(), torch.tensor(1.0), atol=1e-3)

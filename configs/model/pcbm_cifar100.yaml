@@ -1,0 +1,16 @@
+# Post-hoc CBM black-box model (Steps 6-7), CIFAR-100 classifier.
+# Trained on the filtered 143/170-concept Broden bank (27 corrupted concepts
+# dropped after manual review -- see docs/broden_label_corruption.md) with a
+# plain ImageNet-pretrained resnet18 backbone, not CLIP -- deliberately, so
+# a CARDS-vs-PCBM correlation validation isn't circular (CARDS itself
+# represents concepts via CLIP; see notes/ablation_scope_decision.md).
+# Needs: `uv sync --extra pcbm` (pytorchcv), and ../post_hoc_cbm checked out
+# as a sibling directory -- see cards.models.posthoc_cbm for what's actually
+# required and why. target_class is any of CIFAR-100's 100 fine-label class
+# names (e.g. "apple", "aquarium_fish", ...); override per attribution run.
+name: pcbm_cifar100
+_target_: cards.models.posthoc_cbm.PosthocCBMBlackBox
+checkpoint_path: ../post_hoc_cbm/trained_models_new/broden_filtered143/resnet18/pcbm_cifar100__resnet18__broden_resnet18_0__lam_0.0002__alpha_0.99__seed_42__linear.ckpt
+post_hoc_cbm_path: ../post_hoc_cbm
+target_class: apple
+device: ${device}

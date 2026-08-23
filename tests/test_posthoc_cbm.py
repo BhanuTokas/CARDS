@@ -10,7 +10,12 @@ import pytest
 import torch
 from PIL import Image
 
-from cards.models.posthoc_cbm import PosthocCBMBlackBox, cub_preprocess, resolve_target_index
+from cards.models.posthoc_cbm import (
+    PosthocCBMBlackBox,
+    cub_preprocess,
+    resnet18_preprocess,
+    resolve_target_index,
+)
 
 # ---- resolve_target_index ----
 
@@ -48,6 +53,60 @@ def test_cub_preprocess_normalizes_with_cub_mean_std():
     tensor = cub_preprocess()(image)
 
     assert tensor.abs().max().item() < 0.02  # ~0, allowing for 128/255 rounding
+
+
+# ---- resnet18_preprocess ----
+
+
+def test_resnet18_preprocess_center_crops_to_224():
+    image = Image.new("RGB", (500, 300), color=(120, 60, 200))
+
+    tensor = resnet18_preprocess()(image)
+
+    assert tensor.shape == (3, 224, 224)
+
+
+def test_resnet18_preprocess_normalizes_with_imagenet_mean_std():
+    image = Image.new("RGB", (224, 224), color=(128, 128, 128))
+
+    tensor = resnet18_preprocess()(image)
+
+    pixel = 128 / 255
+    expected_r = (pixel - 0.485) / 0.229
+    expected_g = (pixel - 0.456) / 0.224
+    expected_b = (pixel - 0.406) / 0.225
+    assert tensor[0, 0, 0].item() == pytest.approx(expected_r, abs=1e-4)
+    assert tensor[1, 0, 0].item() == pytest.approx(expected_g, abs=1e-4)
+    assert tensor[2, 0, 0].item() == pytest.approx(expected_b, abs=1e-4)
+
+
+# ---- PosthocCBMBlackBox backbone dispatch ----
+
+
+class _FakePcbmModel:
+    def __init__(self, backbone_name):
+        self.backbone_name = backbone_name
+        self.idx_to_class = {0: "a", 1: "b"}
+
+    def eval(self):
+        return self
+
+    def to(self, device):
+        return self
+
+
+def test_init_rejects_unsupported_backbone(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "cards.models.posthoc_cbm.torch.load", lambda *a, **k: _FakePcbmModel("clip:RN50")
+    )
+
+    with pytest.raises(NotImplementedError):
+        PosthocCBMBlackBox(
+            checkpoint_path=str(tmp_path / "fake.ckpt"),
+            target_class="a",
+            post_hoc_cbm_path=str(tmp_path),
+            device="cpu",
+        )
 
 
 # ---- PosthocCBMBlackBox.__call__ ----

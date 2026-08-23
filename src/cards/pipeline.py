@@ -24,15 +24,22 @@ from cards.attribution.normalization import (
     embedding_distance_normalize,
     variance_normalize,
 )
-from cards.concepts.prompts import build_concept_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.datasets import load_cifar, load_cub, load_metadataset
 from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
 from cards.encoders.base import ImageTextEncoder
-from cards.encoders.open_clip_encoder import OpenClipEncoder
+from cards.retrieval.aligned import aligned_retrieval
 from cards.retrieval.confound import matched_retrieval, stratified_retrieval
+from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.pool import CandidatePool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
+from cards.retrieval.symmetric_aligned import symmetric_aligned_retrieval
 from cards.utils.seed import set_seed
 
 log = logging.getLogger(__name__)
@@ -73,7 +80,8 @@ def retrieve_concept_sets(
     pool: CandidatePool,
     t_c: torch.Tensor,
 ) -> tuple[list[int], list[int]]:
-    """Steps 2/3: dispatches to naive / matched / stratified retrieval per
+    """Steps 2/3: dispatches to naive / matched / stratified / aligned /
+    aligned_symmetric / aligned_symmetric_constrained retrieval per
     cfg.retrieval.strategy."""
     strategy = cfg.retrieval.strategy
     if strategy == "naive":
@@ -84,7 +92,45 @@ def retrieve_concept_sets(
         return present_indices, absent_indices
     if strategy == "stratified":
         return stratified_retrieval(pool, t_c, cfg.k)
+    if strategy == "aligned":
+        present_indices, _ = retrieve_top_bottom_k(pool, t_c, cfg.k)
+        absent_indices = aligned_retrieval(pool, present_indices, t_c, cfg.k)
+        return present_indices, absent_indices
+    if strategy == "aligned_symmetric":
+        return symmetric_aligned_retrieval(pool, t_c, cfg.k)
+    if strategy == "aligned_symmetric_constrained":
+        pool_multiplier = cfg.retrieval.get("present_pool_multiplier", 3)
+        return symmetric_aligned_retrieval(
+            pool, t_c, cfg.k, present_candidate_pool_size=pool_multiplier * cfg.k
+        )
     raise ValueError(f"unknown retrieval strategy {strategy!r}")
+
+
+def resolve_demean_reference_concepts(cfg: DictConfig, concepts: list[str]) -> list[str]:
+    """Which concepts to compute the demean_query text center from:
+    cfg.demean_reference_concepts if given, else `concepts` itself if
+    that's a big enough sample (>=10, compute_text_center's own floor),
+    else CARDS' built-in generic vocabulary -- logged loudly every time,
+    since it's a generic stand-in for the run's own concept bank, not a
+    substitute for one.
+    """
+    if cfg.demean_reference_concepts:
+        return list(cfg.demean_reference_concepts)
+    if len(concepts) >= 10:
+        return concepts
+    log.warning(
+        "demean_query is enabled but only %d concept(s) were given (%s) and "
+        "no demean_reference_concepts was set -- falling back to CARDS' "
+        "built-in generic reference vocabulary (%d concepts) to compute the "
+        "de-meaning text center. This is a generic stand-in, not specific to "
+        "this run's concept bank; pass demean_reference_concepts explicitly "
+        "(e.g. the full concept bank this run's concepts are drawn from) for "
+        "a better estimate.",
+        len(concepts),
+        concepts,
+        len(GENERIC_REFERENCE_CONCEPTS),
+    )
+    return GENERIC_REFERENCE_CONCEPTS
 
 
 def process_concept(
@@ -92,9 +138,19 @@ def process_concept(
     encoder: ImageTextEncoder,
     pool: CandidatePool,
     concept: str,
+    text_center: torch.Tensor | None = None,
 ) -> ConceptResult:
-    """Steps 1, 2/3, 4 for a single concept."""
+    """Steps 1, 2/3, 4 for a single concept.
+
+    `text_center`, when given, de-means the Step 1 query before retrieval
+    (see cards.concepts.prompts.demean_query) -- an ablation toggle
+    (cfg.demean_query), not always applied, since it changes which
+    images get retrieved and therefore isn't free to turn on
+    unconditionally when comparing against prior runs/results.
+    """
     t_c = build_concept_query(concept, encoder)
+    if text_center is not None:
+        t_c = demean_query(t_c, text_center)
     present_indices, absent_indices = retrieve_concept_sets(cfg, pool, t_c)
     direction = estimate_direction(
         concept, pool.embeddings[present_indices], pool.embeddings[absent_indices]
@@ -130,6 +186,16 @@ def normalize_score(
     if method == "embedding_distance":
         return embedding_distance_normalize(raw_score, delta_c)
     raise ValueError(f"unknown normalization method {method!r}")
+
+
+def instantiate_encoder(cfg: DictConfig) -> ImageTextEncoder:
+    """Step 1/2 encoder, pluggable via cfg.encoder's `_target_` -- same
+    strip-`name`-then-hydra.utils.instantiate pattern as
+    instantiate_model, so adding a new encoder (e.g. Perception Encoder)
+    is a new configs/encoder/*.yaml, not a code change here.
+    """
+    encoder_cfg = {k: v for k, v in cfg.encoder.items() if k != "name"}
+    return hydra.utils.instantiate(encoder_cfg)
 
 
 def instantiate_model(cfg: DictConfig):
@@ -179,10 +245,10 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
     if not concepts:
         raise ValueError("cfg.concepts must be a non-empty list")
 
-    encoder = OpenClipEncoder(cfg.encoder.model_name, cfg.encoder.pretrained, device=cfg.device)
+    encoder = instantiate_encoder(cfg)
 
     pairs = load_dataset_pool(cfg)
-    pool = CandidatePool.from_pairs(pairs, encoder)
+    pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)
     log.info(
         "Candidate pool: %d images from dataset=%s split=%s",
         len(pool.paths),
@@ -190,7 +256,18 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
         cfg.pool_source,
     )
 
-    results = [process_concept(cfg, encoder, pool, concept) for concept in concepts]
+    text_center = None
+    if cfg.demean_query:
+        reference_concepts = resolve_demean_reference_concepts(cfg, concepts)
+        text_center = compute_text_center(reference_concepts, encoder)
+        log.info(
+            "demean_query enabled: text center computed from %d reference concepts",
+            len(reference_concepts),
+        )
+
+    results = [
+        process_concept(cfg, encoder, pool, concept, text_center=text_center) for concept in concepts
+    ]
 
     if cfg.orthogonalize and len(results) > 1:
         orthogonalized = lowdin_orthogonalize([r.direction for r in results])

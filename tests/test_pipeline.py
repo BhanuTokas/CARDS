@@ -14,15 +14,18 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 
+from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS
 from cards.directions.estimate import ConceptDirection
 from cards.pipeline import (
     ConceptResult,
     compute_delta_c,
+    instantiate_encoder,
     instantiate_model,
     load_and_preprocess,
     load_dataset_pool,
     normalize_score,
     process_concept,
+    resolve_demean_reference_concepts,
     retrieve_concept_sets,
     save_directions,
 )
@@ -86,6 +89,47 @@ def test_retrieve_concept_sets_stratified():
     assert len(present) == len(absent) == 4  # 2 per stratum x 2 strata
 
 
+def test_retrieve_concept_sets_aligned():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "aligned"}, "k": 3})
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+    assert set(present).isdisjoint(absent)
+
+
+def test_retrieve_concept_sets_aligned_symmetric():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "aligned_symmetric"}, "k": 3})
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+    assert set(present).isdisjoint(absent)
+
+
+def test_retrieve_concept_sets_aligned_symmetric_constrained():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create(
+        {"retrieval": {"strategy": "aligned_symmetric_constrained", "present_pool_multiplier": 3}, "k": 3}
+    )
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+    assert set(present).isdisjoint(absent)
+
+
+def test_retrieve_concept_sets_aligned_symmetric_constrained_default_multiplier():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "aligned_symmetric_constrained"}, "k": 3})
+
+    present, absent = retrieve_concept_sets(cfg, pool, pool.embeddings[0])
+
+    assert len(present) == len(absent) == 3
+
+
 def test_retrieve_concept_sets_rejects_unknown_strategy():
     pool = _make_pool(10)
     cfg = OmegaConf.create({"retrieval": {"strategy": "bogus"}, "k": 3})
@@ -107,6 +151,64 @@ def test_process_concept_returns_direction_and_indices():
     assert isinstance(result, ConceptResult)
     assert result.direction.concept == "dog"
     assert len(result.present_indices) == len(result.absent_indices) == 3
+
+
+def test_process_concept_text_center_changes_retrieval():
+    # A text_center offset large enough to plausibly flip which images
+    # rank as top/bottom-k confirms process_concept actually threads it
+    # into the query used for retrieval, not just accepting and ignoring it.
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "naive"}, "k": 3})
+    encoder = _LookupTextEncoder(dim=8)
+    t_c = encoder.encode_text(["a photo of dog"])[0]  # same query build_concept_query would produce internally
+
+    without_center = process_concept(cfg, encoder, pool, "dog")
+    with_center = process_concept(cfg, encoder, pool, "dog", text_center=t_c * 0.9)
+
+    assert with_center.present_indices != without_center.present_indices
+
+
+def test_process_concept_default_text_center_is_none():
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "naive"}, "k": 3})
+    encoder = _LookupTextEncoder(dim=8)
+
+    explicit_none = process_concept(cfg, encoder, pool, "dog", text_center=None)
+    default = process_concept(cfg, encoder, pool, "dog")
+
+    assert explicit_none.present_indices == default.present_indices
+
+
+# ---- resolve_demean_reference_concepts ----
+
+
+def test_resolve_demean_reference_concepts_prefers_explicit_override():
+    cfg = OmegaConf.create({"demean_reference_concepts": ["a", "b", "c"]})
+
+    result = resolve_demean_reference_concepts(cfg, ["dog"] * 20)
+
+    assert result == ["a", "b", "c"]
+
+
+def test_resolve_demean_reference_concepts_uses_own_concepts_when_enough():
+    cfg = OmegaConf.create({"demean_reference_concepts": None})
+    concepts = [f"concept_{i}" for i in range(10)]
+
+    result = resolve_demean_reference_concepts(cfg, concepts)
+
+    assert result == concepts
+
+
+def test_resolve_demean_reference_concepts_falls_back_when_too_few(caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    cfg = OmegaConf.create({"demean_reference_concepts": None})
+
+    result = resolve_demean_reference_concepts(cfg, ["dog"])
+
+    assert result == GENERIC_REFERENCE_CONCEPTS
+    assert any("built-in generic reference vocabulary" in record.message for record in caplog.records)
 
 
 # ---- compute_delta_c ----
@@ -263,6 +365,35 @@ def test_save_directions_round_trips(tmp_path):
     loaded = torch.load(path, weights_only=False)
     assert loaded["dog"]["magnitude"] == pytest.approx(2.0)
     assert torch.allclose(loaded["dog"]["unit_vector"], torch.tensor([1.0, 0.0]))
+
+
+# ---- instantiate_encoder ----
+
+
+class _FakeEncoder:
+    """A stand-in _target_ that -- like the real OpenClipEncoder/
+    PerceptionEncoder -- doesn't accept a `name` kwarg, so this catches
+    the same name-leaking bug instantiate_model already guards against."""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+
+
+def test_instantiate_encoder_strips_name_before_instantiating():
+    cfg = OmegaConf.create(
+        {
+            "encoder": {
+                "name": "fake",
+                "_target_": "test_pipeline._FakeEncoder",
+                "model_name": "some-model",
+            }
+        }
+    )
+
+    encoder = instantiate_encoder(cfg)
+
+    assert isinstance(encoder, _FakeEncoder)
+    assert encoder.model_name == "some-model"
 
 
 # ---- instantiate_model ----

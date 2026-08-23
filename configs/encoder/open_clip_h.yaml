@@ -1,3 +1,5 @@
 name: open_clip_h
+_target_: cards.encoders.open_clip_encoder.OpenClipEncoder
 model_name: ViT-H-14
 pretrained: laion2b_s32b_b79k
+device: ${device}
