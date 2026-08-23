@@ -52,8 +52,8 @@ class PerceptionEncoder(ImageTextEncoder):
         if repo_path not in sys.path:
             sys.path.insert(0, repo_path)
 
-        import core.vision_encoder.pe as pe
         import core.vision_encoder.transforms as pe_transforms
+        from core.vision_encoder import pe
 
         self.device = device
         self.batch_size = batch_size

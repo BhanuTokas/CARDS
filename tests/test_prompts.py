@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
 import torch
 import torch.nn.functional as F
-
-import pytest
 
 from cards.concepts.prompts import (
     DEFAULT_TEMPLATES,

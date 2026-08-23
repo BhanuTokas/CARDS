@@ -5,8 +5,6 @@ normalization -- see notes/ablation_scope_decision.md."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import torch
 from omegaconf import OmegaConf
 
