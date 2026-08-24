@@ -45,6 +45,17 @@ perception = [
     "ftfy>=6.0",
     "regex>=2023.0",
 ]
+# Only needed to run github.com/mertyg/post-hoc-cbm's OWN training scripts
+# (learn_concepts_dataset.py, train_pcbm.py) directly via this project's uv
+# env -- distinct from the `pcbm` group above, which is for CARDS' own
+# inference-time black-box adapter (cards.models.posthoc_cbm). Not used by
+# any code under src/cards. pandas is the one dependency of that repo's
+# training path not already covered by CARDS' own deps (torch/numpy/
+# sklearn/PIL/tqdm) -- traced directly from data/concept_loaders.py's
+# imports, see notes/pcbm_correlation_investigation.md's v19/Phase-1 work.
+pcbm-training = [
+    "pandas>=2.0",
+]
 
 [dependency-groups]
 dev = [
