@@ -1,0 +1,72 @@
+"""Swappable pretrained-backbone registry for the CARDS vs. TCAV vs. PCBM
+ImageNet comparison (notes/pcbm_correlation_investigation.md, v25+).
+
+Distinct from `cards.models.posthoc_cbm`'s pytorchcv-based `resnet18`/
+`resnet18_cub`/`resnet18_lowres` branches, which back the existing CUB/
+CIFAR-100 checkpoints and stay untouched -- this module is the new,
+torchvision-based backbone source for the ImageNet track specifically,
+chosen for its single consistent `weights=...IMAGENET1K_V1` API across
+CNN and Transformer families alike (needed once a ViT entry is added; see
+the parent plan's Phase 6).
+
+Per this investigation's surrogate-modeling decision: the "black box" all
+three comparison methods (CARDS, TCAV, PCBM) explain is the *native*
+off-the-shelf model's own real classification head, not a separately
+fit one -- so `load_native()` returns the complete, unmodified pretrained
+model. `feature_extractor()` derives PCBM's own backbone (native head
+dropped) from that same loaded instance, so PCBM's concept-bottleneck
+input and TCAV's hooked activations both trace back to identical,
+frozen weights -- never two separately-loaded copies that could drift.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+import torch
+import torch.nn as nn
+from PIL import Image
+from torchvision.models import ResNet18_Weights, resnet18
+
+
+@dataclass
+class BackboneSpec:
+    """One entry in `BACKBONES`. `hook_layer` is the dotted path (relative
+    to the module returned by `load_native()`) TCAV should hook -- the
+    second-to-last nonlinear/learnable layer before the native
+    classification head, per the parent plan's generalized convention
+    (the final pooling step has no learnable transformation, so the last
+    *meaningful* layer is one before it)."""
+
+    name: str
+    embed_dim: int
+    hook_layer: str
+    load_native: Callable[[], nn.Module]
+    preprocess: Callable[[Image.Image], torch.Tensor]
+    feature_extractor: Callable[[nn.Module], nn.Module]
+
+
+def _load_resnet18_native() -> nn.Module:
+    model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+    return model.eval()
+
+
+def _resnet18_feature_extractor(native_model: nn.Module) -> nn.Module:
+    """Backbone-up-to-pooled-embedding, native `fc` head dropped -- for
+    PCBM's own concept-bottleneck input. Reuses the exact same weights
+    `load_native()` returned (not a second load), so PCBM's and TCAV's
+    view of the backbone are guaranteed identical."""
+    return nn.Sequential(*list(native_model.children())[:-1])
+
+
+BACKBONES: dict[str, BackboneSpec] = {
+    "resnet18": BackboneSpec(
+        name="resnet18",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_resnet18_native,
+        preprocess=ResNet18_Weights.IMAGENET1K_V1.transforms(),
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+}

@@ -227,3 +227,5 @@ embedding_cache/
 *.ckpt
 *.pt
 *.pth
+trained_concepts_new/
+trained_models_new/
