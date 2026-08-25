@@ -56,6 +56,16 @@ perception = [
 pcbm-training = [
     "pandas>=2.0",
 ]
+# Only needed by scripts/build_imagenet_slice.py (Phase 1 of the CARDS vs.
+# TCAV vs. PCBM comparison, notes/pcbm_correlation_investigation.md) to pull
+# and filter a small class-targeted slice of ILSVRC/imagenet-1k from
+# Hugging Face's parquet-sharded hosting -- huggingface_hub (for downloading
+# individual shard files) is already a transitive dep via open_clip_torch/
+# transformers; pyarrow is the one addition, needed to read/filter those
+# parquet shards locally without pulling in the full `datasets` library.
+imagenet = [
+    "pyarrow>=17.0",
+]
 
 [dependency-groups]
 dev = [
