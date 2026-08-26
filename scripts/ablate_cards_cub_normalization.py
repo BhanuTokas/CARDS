@@ -31,6 +31,22 @@ no retrieval cost paid twice:
   compressed/poorly calibrated; centering on the cluster's own mean
   first is the standard fix, tested here as its own condition rather
   than assumed to help.
+- embedding_distance_query_projection: delta_c = t_c_unit . d_c (a
+  SIGNED linear projection of the raw difference vector d_c =
+  mean(P_c)-mean(N_c) onto the ORIGINAL TEXT QUERY's own unit direction,
+  not d_c's own direction) -- prompted directly ("Can we also ablate for
+  the distance along the concept vector?"). Distinct from
+  embedding_distance_euclidean: projecting d_c onto its OWN direction
+  trivially returns ||d_c|| (already tested), so "distance along the
+  concept vector" is only a new quantity if "concept vector" means t_c,
+  the direction actually asked for -- exactly the quantity
+  cards.retrieval.aligned's own docstring names as what naive bottom-k
+  retrieval already optimizes (t_c . d_c). Unlike every other condition
+  here, this divisor CAN be negative (t_c and d_c aren't guaranteed to
+  point the same way, especially under `matched`/`naive` where v45 found
+  them ~80-83 degrees apart) -- a genuine, checkable difference from the
+  other conditions, all of which use a non-negative divisor and are
+  therefore mathematically guaranteed to tie on sign agreement.
 
 Scored against the 87-attribute bank (Part 2, the primary evidence base
 per v48).
@@ -44,6 +60,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 
@@ -149,10 +166,13 @@ def main():
     scores_embed_euclidean: dict[tuple[int, int], float] = {}
     scores_embed_angular_origin: dict[tuple[int, int], float] = {}
     scores_embed_angular_centered: dict[tuple[int, int], float] = {}
+    scores_embed_query_projection: dict[tuple[int, int], float] = {}
 
     n_variance_skipped = 0
     n_embed_skipped = 0
     n_embed_centered_skipped = 0
+    n_embed_projection_skipped = 0
+    n_negative_projection = 0
 
     for attr_idx, (prefix, _part_names) in groundable.items():
         value = attribute_names[attr_idx].split("::", 1)[1]
@@ -181,6 +201,12 @@ def main():
         delta_c_angular_origin = angular_distance(present_centroid, absent_centroid)
         delta_c_angular_centered = angular_distance(present_centroid - pool_mean, absent_centroid - pool_mean)
 
+        d_c = present_centroid - absent_centroid  # raw (unnormalized) difference vector
+        t_c_unit = F.normalize(t_c, dim=0)
+        delta_c_query_projection = float(t_c_unit @ d_c)  # signed -- can be negative, unlike every other delta_c here
+        if delta_c_query_projection < 0:
+            n_negative_projection += 1
+
         for native_idx in range(200):
             raw_val = raw_score_all_classes[native_idx].item()
             scores_raw[(attr_idx, native_idx)] = raw_val
@@ -203,9 +229,17 @@ def main():
             except ValueError:
                 n_embed_centered_skipped += 1
 
+            try:
+                scores_embed_query_projection[(attr_idx, native_idx)] = embedding_distance_normalize(raw_val, delta_c_query_projection)
+            except ValueError:
+                n_embed_projection_skipped += 1
+
     print(f"\n(variance-normalize skipped {n_variance_skipped} zero-variance (concept,class) pairs; "
           f"embedding-distance skipped {n_embed_skipped} zero-delta_c pairs, "
-          f"{n_embed_centered_skipped} zero-delta_c-centered pairs)", flush=True)
+          f"{n_embed_centered_skipped} zero-delta_c-centered pairs, "
+          f"{n_embed_projection_skipped} zero-query-projection pairs)", flush=True)
+    print(f"query-projection delta_c was NEGATIVE for {n_negative_projection}/{len(groundable)} concepts "
+          f"(t_c and d_c pointing more than 90 degrees apart)", flush=True)
 
     results = []
     for label, scores in [
@@ -214,6 +248,7 @@ def main():
         ("embedding_distance (euclidean delta_c)", scores_embed_euclidean),
         ("embedding_distance (angular delta_c, origin-relative)", scores_embed_angular_origin),
         ("embedding_distance (angular delta_c, cluster-centered)", scores_embed_angular_centered),
+        ("embedding_distance (query-projection delta_c, signed)", scores_embed_query_projection),
     ]:
         evaluate_and_log(label, faithfulness_records, scores, results)
 
