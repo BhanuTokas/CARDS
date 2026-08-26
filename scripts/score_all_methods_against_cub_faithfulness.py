@@ -175,6 +175,32 @@ def load_pcbm_clip_concepts_scores() -> dict[tuple[int, int], float]:
     return scores
 
 
+def load_pcbm_official_siglip_scores(groundtruth: bool = False) -> dict[tuple[int, int], float]:
+    """Reads results/pcbm_official_siglip_cub_scores.csv (surrogate
+    framing) or pcbm_official_siglip_groundtruth_cub_scores.csv
+    (ground-truth framing) -- scripts/
+    train_pcbm_surrogate_cub_official_siglip.py's dual-framing output.
+    Same official 112-attribute concept definition/image splits as the
+    resnet18_cub bank, CAVs refit in SigLIP's own embedding space."""
+    fname = "pcbm_official_siglip_groundtruth_cub_scores.csv" if groundtruth else "pcbm_official_siglip_cub_scores.csv"
+    scores = {}
+    with open(RESULTS_DIR / fname, newline="") as f:
+        for row in csv.DictReader(f):
+            scores[(int(row["attribute_index"]), int(row["native_class_idx"]))] = float(row["weight"])
+    return scores
+
+
+def load_pcbm_siglip_concepts_scores() -> dict[tuple[int, int], float]:
+    """Reads results/pcbm_siglip_concepts_cub_scores.csv (scripts/
+    train_pcbm_siglip_concepts_cub.py) -- PCBM's "concepts" variant with
+    SigLIP swapped in for CLIP-RN50 as the joint image+text backbone."""
+    scores = {}
+    with open(RESULTS_DIR / "pcbm_siglip_concepts_cub_scores.csv", newline="") as f:
+        for row in csv.DictReader(f):
+            scores[(int(row["attribute_index"]), int(row["native_class_idx"]))] = float(row["weight"])
+    return scores
+
+
 def load_pcbm_official_scores() -> dict[tuple[int, int], float]:
     ckpt_path = (
         "../post_hoc_cbm/trained_models_new/cub/resnet18_cub/"
@@ -248,12 +274,19 @@ def main():
     print(f"TCAV (targeted v49, full-coverage run) scores: {len(tcav_targeted_scores)} pairs")
     print(f"PCBM (CLIP-concepts) scores: {len(pcbm_clip_concepts_scores)} pairs")
 
+    pcbm_official_siglip_surrogate = load_pcbm_official_siglip_scores(groundtruth=False)
+    pcbm_official_siglip_groundtruth = load_pcbm_official_siglip_scores(groundtruth=True)
+    pcbm_siglip_concepts_scores = load_pcbm_siglip_concepts_scores() if (RESULTS_DIR / "pcbm_siglip_concepts_cub_scores.csv").exists() else {}
+
     for method_name, scores, threshold in [
         ("CARDS (official bank)", cards_official_scores, 0.0),
-        ("PCBM (official 112-bank weight)", pcbm_official_scores, 0.0),
+        ("PCBM (official 112-bank, resnet18_cub backbone, ground-truth)", pcbm_official_scores, 0.0),
+        ("PCBM (official 112-bank, SigLIP backbone, surrogate)", pcbm_official_siglip_surrogate, 0.0),
+        ("PCBM (official 112-bank, SigLIP backbone, ground-truth)", pcbm_official_siglip_groundtruth, 0.0),
         ("TCAV (broad run, STALE PARTIAL COVERAGE -- see v55)", tcav_official_scores, 0.5),
         ("TCAV (targeted v49, FULL COVERAGE -- the trustworthy number)", tcav_targeted_scores, 0.5),
-        ("PCBM (CLIP-concepts weight)", pcbm_clip_concepts_scores, 0.0),
+        ("PCBM (CLIP-RN50-concepts weight)", pcbm_clip_concepts_scores, 0.0),
+        ("PCBM (SigLIP-concepts weight)", pcbm_siglip_concepts_scores, 0.0),
     ]:
         report(method_name, attr_records, scores, pair_label="attribute", method_threshold=threshold, indent="\n")
 

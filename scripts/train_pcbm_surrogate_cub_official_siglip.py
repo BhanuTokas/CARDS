@@ -169,43 +169,48 @@ def main():
     native_true_label_acc_test = (test_surrogate == test_true).mean()
     print(f"\nNative resnet18_cub's own true-label accuracy on test (informational): {native_true_label_acc_test:.4f}", flush=True)
 
-    print("\n=== fitting PCBM's linear head against SURROGATE labels ===", flush=True)
-    args = Args()
-    run_info, weights, bias = run_linear_probe(args, (train_proj, train_surrogate), (test_proj, test_surrogate))
-    print(f"train fidelity (agreement with native model, train slice): {run_info['train_acc']:.2f}%")
-    print(f"test fidelity (agreement with native model, held-out test slice): {run_info['test_acc']:.2f}%")
-
-    posthoc_layer.set_weights(weights=weights, bias=bias)
-
-    with torch.no_grad():
-        test_logits = posthoc_layer.forward_projs(torch.tensor(test_proj, device=DEVICE).float())
-        pcbm_pred = test_logits.argmax(dim=1).cpu().numpy()
-    pcbm_true_label_acc = (pcbm_pred == test_true).mean()
-    pcbm_native_fidelity = (pcbm_pred == test_surrogate).mean()
-    print(f"\nPCBM(official, SigLIP backbone) surrogate's own true-label accuracy on test: {pcbm_true_label_acc:.4f}")
-    print(f"PCBM(official, SigLIP backbone) surrogate's fidelity to native model's predictions on test: {pcbm_native_fidelity:.4f}")
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = OUT_DIR / f"pcbm_cub__siglip__cub_official__surrogate__seed_{SEED}__linear.ckpt"
-    torch.save(posthoc_layer, model_path)
-    print(f"\nSaved surrogate PCBM to {model_path}")
-
-    # (attribute, class) -> weight, same shape score_all_methods_against_cub_faithfulness.py's other PCBM loaders use.
-    weight = posthoc_layer.classifier.weight.detach().cpu().numpy()  # (200, 112)
-    scores = {}
-    for attr_idx in range(weight.shape[1]):
-        for local_idx in range(weight.shape[0]):
-            scores[(attr_idx, local_idx)] = float(weight[local_idx, attr_idx])
-
     import csv
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    with open(RESULTS_DIR / "pcbm_official_siglip_cub_scores.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["attribute_index", "native_class_idx", "weight"])
-        for (attr_idx, class_idx), w in scores.items():
-            writer.writerow([attr_idx, class_idx, w])
-    print(f"Saved {len(scores)} (attribute, class) scores to results/pcbm_official_siglip_cub_scores.csv")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    def fit_and_save(train_labels, test_labels, tag, ckpt_suffix, out_csv):
+        layer = PosthocLinearCBM(concept_bank, backbone_name="siglip", idx_to_class=idx_to_class, n_classes=len(classes)).to(DEVICE)
+        print(f"\n=== fitting PCBM's linear head against {tag} labels ===", flush=True)
+        run_info, weights, bias = run_linear_probe(Args(), (train_proj, train_labels), (test_proj, test_labels))
+        print(f"[{tag}] train acc={run_info['train_acc']:.2f}%  test acc={run_info['test_acc']:.2f}%", flush=True)
+        layer.set_weights(weights=weights, bias=bias)
+
+        with torch.no_grad():
+            test_logits = layer.forward_projs(torch.tensor(test_proj, device=DEVICE).float())
+            pcbm_pred = test_logits.argmax(dim=1).cpu().numpy()
+        print(f"[{tag}] PCBM(official, SigLIP backbone) true-label accuracy on test: {(pcbm_pred == test_true).mean():.4f}", flush=True)
+        print(f"[{tag}] PCBM(official, SigLIP backbone) fidelity to native model's predictions on test: {(pcbm_pred == test_surrogate).mean():.4f}", flush=True)
+
+        model_path = OUT_DIR / f"pcbm_cub__siglip__cub_official__{ckpt_suffix}__seed_{SEED}__linear.ckpt"
+        torch.save(layer, model_path)
+        print(f"[{tag}] Saved to {model_path}", flush=True)
+
+        weight = layer.classifier.weight.detach().cpu().numpy()  # (200, 112)
+        with open(RESULTS_DIR / out_csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["attribute_index", "native_class_idx", "weight"])
+            for attr_idx in range(weight.shape[1]):
+                for local_idx in range(weight.shape[0]):
+                    writer.writerow([attr_idx, local_idx, float(weight[local_idx, attr_idx])])
+        print(f"[{tag}] Saved {weight.shape[0] * weight.shape[1]} (attribute, class) scores to results/{out_csv}", flush=True)
+
+    # (1) Surrogate framing -- this investigation's own stated best practice
+    # (fidelity to the model being explained), matching the part-crop bank
+    # and CLIP/SigLIP-concepts variants.
+    fit_and_save(train_surrogate, test_surrogate, "SURROGATE", "surrogate",
+                 "pcbm_official_siglip_cub_scores.csv")
+
+    # (2) Ground-truth framing -- matches the EXISTING resnet18_cub
+    # official-bank baseline's own actual fitting convention (see module
+    # docstring), for a strict backbone-only ablation against it.
+    fit_and_save(train_true, test_true, "GROUND-TRUTH", "groundtruth",
+                 "pcbm_official_siglip_groundtruth_cub_scores.csv")
 
 
 if __name__ == "__main__":
