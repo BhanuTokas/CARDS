@@ -147,7 +147,7 @@ def main():
 
         t_c = build_concept_query(query_text, encoder)
         present_indices, _ = retrieve_top_bottom_k(pool, t_c, K)
-        absent_indices = matched_retrieval(pool, present_indices, t_c)
+        absent_indices = aligned_retrieval(pool, present_indices, t_c, K)
 
         present_paths = [pool.paths[i] for i in present_indices]
         absent_paths = [pool.paths[i] for i in absent_indices]
