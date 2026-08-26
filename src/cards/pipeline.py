@@ -15,6 +15,7 @@ from pathlib import Path
 
 import hydra
 import torch
+import torch.nn.functional as F
 from omegaconf import DictConfig
 from PIL import Image
 
@@ -133,12 +134,58 @@ def resolve_demean_reference_concepts(cfg: DictConfig, concepts: list[str]) -> l
     return GENERIC_REFERENCE_CONCEPTS
 
 
+def build_query(
+    encoder: ImageTextEncoder, concept: str, text_center: torch.Tensor | None = None
+) -> torch.Tensor:
+    """Step 1 (+ optional de-mean): builds a concept's raw query and
+    de-means it against text_center if given. Split out of
+    process_concept so `run()` can build every concept's query up front
+    -- cfg.orthogonalize needs the FULL set of queries at once (a joint
+    Gram-matrix operation over all concepts), which a function scoped to
+    one concept can't provide on its own.
+    """
+    t_c = build_concept_query(concept, encoder)
+    if text_center is not None:
+        t_c = demean_query(t_c, text_center)
+    return t_c
+
+
+def orthogonalize_queries(queries: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """Jointly Lowdin-orthogonalizes a full set of already-built (and
+    optionally de-meaned) concept queries, BEFORE retrieval -- this is
+    what makes cfg.orthogonalize actually change which images get
+    retrieved and therefore raw_score/normalized_score, unlike the
+    pipeline's old behavior of orthogonalizing the ESTIMATED direction
+    after retrieval/scoring already happened (a no-op for scoring,
+    confirmed directly and fixed here; see notes/
+    cub_correlation_investigation.md v57 and the ablate_cards_cub_
+    orthogonalize.py / ablate_cards_cub_query_orthogonalize.py scripts
+    that diagnosed and prototyped this).
+
+    Wraps each query in a throwaway ConceptDirection just to reuse
+    lowdin_orthogonalize's own Gram-matrix math (magnitude is irrelevant
+    here, only the unit vectors matter, and is set to 0.0). Queries are
+    explicitly re-normalized to unit length first: Lowdin orthogonalization's
+    math assumes unit-norm input columns, and demean_query deliberately
+    does NOT renormalize after subtracting the text center, so a demeaned
+    query arriving here is not reliably unit-norm on its own.
+    """
+    concepts = list(queries.keys())
+    directions = [
+        ConceptDirection(concept=c, unit_vector=F.normalize(queries[c], dim=0), magnitude=0.0)
+        for c in concepts
+    ]
+    orthogonalized = lowdin_orthogonalize(directions)
+    return {d.concept: d.unit_vector for d in orthogonalized}
+
+
 def process_concept(
     cfg: DictConfig,
     encoder: ImageTextEncoder,
     pool: CandidatePool,
     concept: str,
     text_center: torch.Tensor | None = None,
+    query: torch.Tensor | None = None,
 ) -> ConceptResult:
     """Steps 1, 2/3, 4 for a single concept.
 
@@ -147,10 +194,15 @@ def process_concept(
     (cfg.demean_query), not always applied, since it changes which
     images get retrieved and therefore isn't free to turn on
     unconditionally when comparing against prior runs/results.
+
+    `query`, when given, is used AS-IS instead of building (and
+    de-meaning) one internally -- this is how `run()` threads a
+    jointly-orthogonalized query through (cfg.orthogonalize needs every
+    concept's query built up front, which this single-concept function
+    can't do by itself). Passing both `text_center` and `query` isn't
+    contradictory, just redundant: `query` wins, `text_center` is ignored.
     """
-    t_c = build_concept_query(concept, encoder)
-    if text_center is not None:
-        t_c = demean_query(t_c, text_center)
+    t_c = query if query is not None else build_query(encoder, concept, text_center)
     present_indices, absent_indices = retrieve_concept_sets(cfg, pool, t_c)
     direction = estimate_direction(
         concept, pool.embeddings[present_indices], pool.embeddings[absent_indices]
@@ -265,14 +317,29 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
             len(reference_concepts),
         )
 
-    results = [
-        process_concept(cfg, encoder, pool, concept, text_center=text_center) for concept in concepts
-    ]
+    queries: dict[str, torch.Tensor] | None = None
+    if cfg.orthogonalize:
+        if len(concepts) > 1:
+            raw_queries = {c: build_query(encoder, c, text_center) for c in concepts}
+            queries = orthogonalize_queries(raw_queries)
+            log.info(
+                "orthogonalize enabled: jointly Lowdin-orthogonalized %d concept queries "
+                "before retrieval (affects which images are retrieved, not just the saved direction)",
+                len(concepts),
+            )
+        else:
+            log.warning(
+                "cfg.orthogonalize is set but only one concept was given -- orthogonalizing "
+                "a single query against nothing is a no-op, skipping"
+            )
 
-    if cfg.orthogonalize and len(results) > 1:
-        orthogonalized = lowdin_orthogonalize([r.direction for r in results])
-        for result, direction in zip(results, orthogonalized):
-            result.direction = direction
+    results = [
+        process_concept(
+            cfg, encoder, pool, concept, text_center=text_center,
+            query=queries[concept] if queries is not None else None,
+        )
+        for concept in concepts
+    ]
 
     output_dir = Path(cfg.output_dir)
     save_directions(results, output_dir / "directions.pt")
