@@ -19,6 +19,12 @@ agreement, coin-flip) while `aligned` reached this investigation's first
 significant CARDS result (67.4%, p=0.026) by directly optimizing
 cos(mean(P_c)-mean(N_c), t_c) -- exactly the angle diagnostic v45 found
 problematic under `matched`. See notes v46/v47.
+
+K=50 and demean_query=True: the full grid (v47) found
+`k=50, demean=True, baseline phrasing, SigLIP` the single best config
+(71.7% sign agreement, p=0.0045) -- CARDS' strongest result anywhere in
+this investigation, adopted here as the new official default per direct
+instruction ("Let's update it").
 """
 
 from __future__ import annotations
@@ -41,12 +47,12 @@ from cards.pipeline import instantiate_encoder  # noqa: E402
 from cards.retrieval.aligned import aligned_retrieval  # noqa: E402
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool  # noqa: E402
 from cards.retrieval.retrieve import retrieve_top_bottom_k  # noqa: E402
-from cards.concepts.prompts import build_concept_query  # noqa: E402
+from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query  # noqa: E402
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"
 RESULTS_DIR = Path("results")
-K = 30
+K = 50
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # prefix -> template with a {value} placeholder for the attribute's own
@@ -139,6 +145,8 @@ def main():
     groundable = groundable_attributes(attribute_names)
     print(f"{len(groundable)}/{len(attribute_names)} official attributes have a faithfulness ground truth to score against.", flush=True)
 
+    text_center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
+
     rows = []
     for attr_idx, (prefix, _part_names) in groundable.items():
         attr_name = attribute_names[attr_idx]
@@ -146,6 +154,7 @@ def main():
         query_text = build_attribute_query_text(prefix, value)
 
         t_c = build_concept_query(query_text, encoder)
+        t_c = demean_query(t_c, text_center)
         present_indices, _ = retrieve_top_bottom_k(pool, t_c, K)
         absent_indices = aligned_retrieval(pool, present_indices, t_c, K)
 
