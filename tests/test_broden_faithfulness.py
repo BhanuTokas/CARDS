@@ -9,11 +9,28 @@ import numpy as np
 import pytest
 from PIL import Image
 
+import torch
+
 from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
     _area_matched_rectangle,
+    compute_faithfulness,
     mask_region,
     random_placements,
+    score_method_agreement,
+    score_sign_agreement,
 )
+
+
+def _fr(concept_number, predicted_class, delta_p) -> FaithfulnessResult:
+    """Minimal FaithfulnessResult for score_method_agreement/
+    score_sign_agreement tests -- only concept_number/predicted_class/
+    delta_p matter to those functions, everything else is filler."""
+    return FaithfulnessResult(
+        image="x.jpg", concept_number=concept_number, category="test", predicted_class=predicted_class,
+        p0=0.5, p_masked=0.5 - delta_p, delta_p=delta_p, delta_logit=0.0,
+        random_delta_p_mean=0.0, random_delta_p_std=0.0, z_score=0.0, n_random_fallbacks=0,
+    )
 
 # ---- mask_region ----
 
@@ -131,3 +148,127 @@ def test_area_matched_rectangle_approximately_preserves_area():
     assert rect.shape == mask.shape
     # side = round(sqrt(100)) = 10 -> area exactly 100 here
     assert rect.sum() == 100
+
+
+# ---- compute_faithfulness's target_class override ----
+
+
+class _FixedLogitsModel:
+    """Always returns the same logits regardless of input -- argmax is
+    always class 0, so passing target_class=2 is the only way to get a
+    predicted_class of 2, isolating the override behavior."""
+
+    def preprocess(self, image):
+        return torch.zeros(3, 4, 4)
+
+    def __call__(self, batch):
+        return torch.tensor([[2.0, 1.0, 0.5]]).repeat(batch.shape[0], 1)
+
+
+def test_compute_faithfulness_defaults_to_argmax():
+    image = Image.new("RGB", (4, 4), color=(100, 100, 100))
+    mask = np.zeros((4, 4), dtype=bool)
+    mask[1:3, 1:3] = True
+
+    result = compute_faithfulness(
+        image=image, image_path="x.jpg", concept_number=1, category="test",
+        mask=mask, model=_FixedLogitsModel(), rng=np.random.default_rng(0),
+    )
+
+    assert result.predicted_class == 0  # argmax of [2.0, 1.0, 0.5]
+
+
+def test_compute_faithfulness_target_class_overrides_argmax():
+    image = Image.new("RGB", (4, 4), color=(100, 100, 100))
+    mask = np.zeros((4, 4), dtype=bool)
+    mask[1:3, 1:3] = True
+
+    result = compute_faithfulness(
+        image=image, image_path="x.jpg", concept_number=1, category="test",
+        mask=mask, model=_FixedLogitsModel(), rng=np.random.default_rng(0),
+        target_class=2,
+    )
+
+    assert result.predicted_class == 2
+    import torch.nn.functional as F
+
+    expected_p0 = F.softmax(torch.tensor([2.0, 1.0, 0.5]), dim=0)[2].item()
+    assert result.p0 == pytest.approx(expected_p0)
+
+
+# ---- score_method_agreement / score_sign_agreement ----
+
+
+def test_score_method_agreement_returns_none_below_three_pairs():
+    records = [_fr(1, 10, 0.1), _fr(1, 10, 0.2), _fr(1, 10, 0.15)]  # only 1 unique pair
+
+    result = score_method_agreement(records, {(1, 10): 5.0})
+
+    assert result is None
+
+
+def test_score_method_agreement_perfect_correlation():
+    # delta_p and method score both increase together across 3 pairs
+    records = [
+        _fr(1, 10, 0.1), _fr(1, 10, 0.1), _fr(1, 10, 0.1),
+        _fr(1, 20, 0.2), _fr(1, 20, 0.2), _fr(1, 20, 0.2),
+        _fr(1, 30, 0.3), _fr(1, 30, 0.3), _fr(1, 30, 0.3),
+    ]
+    scores = {(1, 10): 1.0, (1, 20): 2.0, (1, 30): 3.0}
+
+    result = score_method_agreement(records, scores)
+
+    assert result.n_pairs == 3
+    assert result.spearman_rho == pytest.approx(1.0)
+
+
+def test_score_sign_agreement_returns_none_below_three_pairs():
+    records = [_fr(1, 10, 0.1), _fr(1, 10, 0.2), _fr(1, 10, 0.15)]
+
+    result = score_sign_agreement(records, {(1, 10): 5.0})
+
+    assert result is None
+
+
+def test_score_sign_agreement_perfect_agreement():
+    records = [
+        _fr(1, 10, 0.1), _fr(1, 10, 0.1), _fr(1, 10, 0.1),   # positive delta_p
+        _fr(1, 20, -0.2), _fr(1, 20, -0.2), _fr(1, 20, -0.2),  # negative delta_p
+        _fr(1, 30, 0.3), _fr(1, 30, 0.3), _fr(1, 30, 0.3),   # positive delta_p
+    ]
+    scores = {(1, 10): 1.0, (1, 20): -1.0, (1, 30): 2.0}  # same signs throughout
+
+    result = score_sign_agreement(records, scores)
+
+    assert result.n_pairs == 3
+    assert result.n_agree == 3
+    assert result.agreement_frac == pytest.approx(1.0)
+
+
+def test_score_sign_agreement_perfect_disagreement():
+    records = [
+        _fr(1, 10, 0.1), _fr(1, 10, 0.1), _fr(1, 10, 0.1),
+        _fr(1, 20, -0.2), _fr(1, 20, -0.2), _fr(1, 20, -0.2),
+        _fr(1, 30, 0.3), _fr(1, 30, 0.3), _fr(1, 30, 0.3),
+    ]
+    scores = {(1, 10): -1.0, (1, 20): 1.0, (1, 30): -2.0}  # every sign flipped
+
+    result = score_sign_agreement(records, scores)
+
+    assert result.n_agree == 0
+    assert result.agreement_frac == pytest.approx(0.0)
+
+
+def test_score_sign_agreement_respects_method_threshold():
+    # TCAV-style score in [0, 1], centered at 0.5 rather than 0
+    records = [
+        _fr(1, 10, 0.1), _fr(1, 10, 0.1), _fr(1, 10, 0.1),   # positive delta_p
+        _fr(1, 20, -0.2), _fr(1, 20, -0.2), _fr(1, 20, -0.2),  # negative delta_p
+        _fr(1, 30, 0.3), _fr(1, 30, 0.3), _fr(1, 30, 0.3),   # positive delta_p
+    ]
+    scores = {(1, 10): 0.9, (1, 20): 0.1, (1, 30): 0.6}  # above/below/above 0.5 respectively
+
+    result = score_sign_agreement(records, scores, method_threshold=0.5)
+
+    assert result.n_agree == 3
+    assert result.agreement_frac == pytest.approx(1.0)

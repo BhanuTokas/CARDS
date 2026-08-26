@@ -29,6 +29,8 @@ import torch.nn as nn
 from PIL import Image
 from torchvision.models import ResNet18_Weights, resnet18
 
+from cards.models.posthoc_cbm import cub_preprocess
+
 
 @dataclass
 class BackboneSpec:
@@ -60,6 +62,21 @@ def _resnet18_feature_extractor(native_model: nn.Module) -> nn.Module:
     return nn.Sequential(*list(native_model.children())[:-1])
 
 
+def _load_resnet18_cub_native() -> nn.Module:
+    from pytorchcv.model_provider import get_model as ptcv_get_model
+
+    model = ptcv_get_model("resnet18_cub", pretrained=True)
+    return model.eval()
+
+
+def _resnet18_cub_feature_extractor(native_model: nn.Module) -> nn.Module:
+    """`features` submodule only (pytorchcv's own `init_block`..`final_pool`
+    stack, native `output` head dropped) -- confirmed via named_children()
+    that resnet18_cub's top level is exactly `{features, output}`, and
+    `hook_layer="features.stage4"` resolves on this same instance."""
+    return native_model.features
+
+
 BACKBONES: dict[str, BackboneSpec] = {
     "resnet18": BackboneSpec(
         name="resnet18",
@@ -68,5 +85,13 @@ BACKBONES: dict[str, BackboneSpec] = {
         load_native=_load_resnet18_native,
         preprocess=ResNet18_Weights.IMAGENET1K_V1.transforms(),
         feature_extractor=_resnet18_feature_extractor,
+    ),
+    "resnet18_cub": BackboneSpec(
+        name="resnet18_cub",
+        embed_dim=512,
+        hook_layer="features.stage4",
+        load_native=_load_resnet18_cub_native,
+        preprocess=cub_preprocess(),
+        feature_extractor=_resnet18_cub_feature_extractor,
     ),
 }

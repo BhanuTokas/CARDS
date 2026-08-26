@@ -24,6 +24,15 @@ def test_resnet18_hook_layer_is_last_nonlinear_block():
     assert BACKBONES["resnet18"].hook_layer == "layer4"
 
 
+def test_registry_has_resnet18_cub_entry():
+    assert "resnet18_cub" in BACKBONES
+    spec = BACKBONES["resnet18_cub"]
+    assert spec.embed_dim == 512
+    # confirmed directly against a loaded checkpoint's named_children():
+    # top level is exactly {features, output}, features.stage4 exists.
+    assert spec.hook_layer == "features.stage4"
+
+
 def test_all_registry_entries_have_callables():
     for name, spec in BACKBONES.items():
         assert callable(spec.load_native), f"{name}.load_native must be callable"

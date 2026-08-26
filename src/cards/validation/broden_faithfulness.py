@@ -162,15 +162,25 @@ def compute_faithfulness(
     n_random_draws: int = 5,
     fill_strategy: str = "blur",
     device: str = "cpu",
+    target_class: int | None = None,
 ) -> FaithfulnessResult:
-    """The core per-(image, concept) measurement. Uses the model's own
-    top-1 prediction on the *unmasked* image as "the class of interest"
-    -- no ImageNet-class ground truth needed, and no external
+    """The core per-(image, concept) measurement. By default uses the
+    model's own top-1 prediction on the *unmasked* image as "the class of
+    interest" -- no ImageNet-class ground truth needed, and no external
     concept->class mapping table, since Broden's images don't carry
-    ImageNet labels at all."""
+    ImageNet labels at all. Pass `target_class` to override this with a
+    real ground-truth label instead (e.g. CUB's own species labels, which
+    -- unlike Broden -- genuinely exist): this measures "does masking
+    concept c reduce the model's confidence in the CORRECT class" rather
+    than "...in whatever the model currently guesses," a different and,
+    where ground truth exists, often more useful question. The resulting
+    `predicted_class` field holds whichever one was actually used --
+    callers passing `target_class` are responsible for documenting that
+    divergence, the field itself doesn't rename to stay compatible with
+    existing readers."""
     x0 = model.preprocess(image).unsqueeze(0).to(device)
     logits0 = model(x0)[0]
-    predicted_class = int(torch.argmax(logits0).item())
+    predicted_class = target_class if target_class is not None else int(torch.argmax(logits0).item())
     p0 = F.softmax(logits0, dim=0)[predicted_class].item()
 
     masked_image = mask_region(image, mask, strategy=fill_strategy)
@@ -209,6 +219,29 @@ def compute_faithfulness(
     )
 
 
+def _aggregate_faithfulness_pairs(
+    faithfulness_records: list[FaithfulnessResult],
+    method_scores: dict[tuple[int, int], float],
+    min_samples_per_pair: int,
+) -> dict[tuple[int, int], float]:
+    """Mean `delta_p` per unique (concept_number, predicted_class) pair
+    across all images sharing it, restricted to pairs with both
+    >=min_samples_per_pair faithfulness samples AND a method score --
+    the shared aggregation both score_method_agreement and
+    score_sign_agreement build on."""
+    from collections import defaultdict
+
+    grouped: dict[tuple[int, int], list[float]] = defaultdict(list)
+    for r in faithfulness_records:
+        grouped[(r.concept_number, r.predicted_class)].append(r.delta_p)
+
+    return {
+        pair: float(np.mean(deltas))
+        for pair, deltas in grouped.items()
+        if len(deltas) >= min_samples_per_pair and pair in method_scores
+    }
+
+
 @dataclass
 class AgreementResult:
     n_pairs: int
@@ -232,19 +265,9 @@ def score_method_agreement(
     Returns None if fewer than 3 pairs have both a faithfulness
     aggregate and a method score (too few for a meaningful correlation).
     """
-    from collections import defaultdict
-
     from scipy.stats import spearmanr
 
-    grouped: dict[tuple[int, int], list[float]] = defaultdict(list)
-    for r in faithfulness_records:
-        grouped[(r.concept_number, r.predicted_class)].append(r.delta_p)
-
-    aggregated = {
-        pair: float(np.mean(deltas))
-        for pair, deltas in grouped.items()
-        if len(deltas) >= min_samples_per_pair and pair in method_scores
-    }
+    aggregated = _aggregate_faithfulness_pairs(faithfulness_records, method_scores, min_samples_per_pair)
 
     if len(aggregated) < 3:
         return None
@@ -254,3 +277,55 @@ def score_method_agreement(
     y = [method_scores[p] for p in pairs]
     rho, p = spearmanr(x, y)
     return AgreementResult(n_pairs=len(pairs), spearman_rho=float(rho), spearman_p=float(p))
+
+
+@dataclass
+class SignAgreementResult:
+    n_pairs: int
+    n_agree: int
+    agreement_frac: float
+    binom_p: float  # two-sided p-value against 50% chance agreement
+
+
+def score_sign_agreement(
+    faithfulness_records: list[FaithfulnessResult],
+    method_scores: dict[tuple[int, int], float],
+    min_samples_per_pair: int = 3,
+    method_threshold: float = 0.0,
+) -> SignAgreementResult | None:
+    """A coarser, more robust complement to score_method_agreement's exact
+    Spearman ranking: for each (concept, predicted_class) pair with enough
+    samples, does the method's score agree with the faithfulness ground
+    truth on DIRECTION alone (mean delta_p > 0, i.e. masking the concept
+    hurt the model, vs. the method's own score > method_threshold)? Exact
+    rank order is fragile at the small n_pairs this investigation
+    typically has (13-46); a binary "did they even point the same way"
+    call is far less sensitive to a handful of noisy pairs, at the cost of
+    discarding magnitude information Spearman uses.
+
+    `method_threshold` lets a method's own "positive" boundary sit
+    somewhere other than 0 -- TCAV's sign_count is a [0,1] fraction
+    centered at 0.5 (not a signed quantity like CARDS' raw_score or PCBM's
+    weight), so callers scoring TCAV should pass method_threshold=0.5.
+
+    Significance is a two-sided exact binomial test against 50% (chance
+    agreement), via scipy's binomtest -- appropriate for a small discrete
+    count of matches/mismatches, unlike a normal-approximation z-test.
+    Returns None under the same too-few-pairs condition as
+    score_method_agreement.
+    """
+    from scipy.stats import binomtest
+
+    aggregated = _aggregate_faithfulness_pairs(faithfulness_records, method_scores, min_samples_per_pair)
+
+    if len(aggregated) < 3:
+        return None
+
+    n_agree = sum(
+        1 for pair, gt in aggregated.items() if (gt > 0) == (method_scores[pair] > method_threshold)
+    )
+    n_pairs = len(aggregated)
+    result = binomtest(n_agree, n_pairs, p=0.5, alternative="two-sided")
+    return SignAgreementResult(
+        n_pairs=n_pairs, n_agree=n_agree, agreement_frac=n_agree / n_pairs, binom_p=float(result.pvalue)
+    )
