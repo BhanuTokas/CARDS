@@ -146,6 +146,35 @@ def load_tcav_official_scores() -> dict[tuple[int, int], float]:
     return scores
 
 
+def load_tcav_targeted_scores() -> dict[tuple[int, int], float]:
+    """Reads results/tcav_cub_targeted_v49.csv (scripts/
+    run_tcav_cub_targeted_v49.py) -- TCAV run specifically against all 522
+    (attribute, predicted_class) pairs the v49 stratified ground truth
+    supports (full targeted coverage, not a coincidental overlap of a
+    broader independently-scoped run -- see notes v52/v55 for why that
+    distinction matters)."""
+    scores = {}
+    with open(RESULTS_DIR / "tcav_cub_targeted_v49.csv", newline="") as f:
+        for row in csv.DictReader(f):
+            scores[(int(row["attribute_index"]), int(row["native_class_idx"]))] = float(row["mean_sign_count"])
+    return scores
+
+
+def load_pcbm_clip_concepts_scores() -> dict[tuple[int, int], float]:
+    """Reads results/pcbm_clip_concepts_cub_scores.csv (scripts/
+    train_pcbm_clip_concepts_cub.py, v2) -- PCBM's own "CLIP concepts"
+    variant, concept vectors = pure CLIP text embeddings, no CAV/image-
+    dataset fitting at all. Best lam=1e-5 from the sweep (test
+    fidelity=15.41%, 69.7% nonzero weights) -- far lower fidelity than the
+    CAV-based official bank, noted plainly, not silently assumed
+    comparable."""
+    scores = {}
+    with open(RESULTS_DIR / "pcbm_clip_concepts_cub_scores.csv", newline="") as f:
+        for row in csv.DictReader(f):
+            scores[(int(row["attribute_index"]), int(row["native_class_idx"]))] = float(row["weight"])
+    return scores
+
+
 def load_pcbm_official_scores() -> dict[tuple[int, int], float]:
     ckpt_path = (
         "../post_hoc_cbm/trained_models_new/cub/resnet18_cub/"
@@ -211,14 +240,20 @@ def main():
     cards_official_scores = load_cards_official_scores()
     pcbm_official_scores = load_pcbm_official_scores()
     tcav_official_scores = load_tcav_official_scores()
+    tcav_targeted_scores = load_tcav_targeted_scores()
+    pcbm_clip_concepts_scores = load_pcbm_clip_concepts_scores()
     print(f"CARDS (official bank) scores: {len(cards_official_scores)} pairs")
     print(f"PCBM (official bank) scores: {len(pcbm_official_scores)} pairs")
-    print(f"TCAV (official bank) scores: {len(tcav_official_scores)} pairs")
+    print(f"TCAV (official bank, broad/partial-coverage run) scores: {len(tcav_official_scores)} pairs")
+    print(f"TCAV (targeted v49, full-coverage run) scores: {len(tcav_targeted_scores)} pairs")
+    print(f"PCBM (CLIP-concepts) scores: {len(pcbm_clip_concepts_scores)} pairs")
 
     for method_name, scores, threshold in [
         ("CARDS (official bank)", cards_official_scores, 0.0),
         ("PCBM (official 112-bank weight)", pcbm_official_scores, 0.0),
-        ("TCAV (official bank, mean_sign_count)", tcav_official_scores, 0.5),
+        ("TCAV (broad run, STALE PARTIAL COVERAGE -- see v55)", tcav_official_scores, 0.5),
+        ("TCAV (targeted v49, FULL COVERAGE -- the trustworthy number)", tcav_targeted_scores, 0.5),
+        ("PCBM (CLIP-concepts weight)", pcbm_clip_concepts_scores, 0.0),
     ]:
         report(method_name, attr_records, scores, pair_label="attribute", method_threshold=threshold, indent="\n")
 

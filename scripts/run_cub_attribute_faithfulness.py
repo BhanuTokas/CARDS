@@ -23,6 +23,32 @@ itself, see notes v34).
 Uses each image's own GROUND-TRUTH species label as `compute_faithfulness`'s
 `target_class` (not the model's own top-1 prediction) -- see notes v41 for
 why, and run_cub_faithfulness.py's own docstring for the same change there.
+
+Sampling is CLASS-STRATIFIED (v49), not flat-random across each
+attribute's whole positive-species pool -- prompted directly ("Shouldn't
+we stratify by class? and take more samples?") after finding that flat
+sampling wasted 96% of its own draws: with only 15 images/attribute drawn
+uniformly across dozens of positive species, 74% of the resulting
+(attribute, class) groups got exactly 1 sample and only 5% ever reached
+the >=3-sample threshold score_method_agreement/score_sign_agreement
+need, leaving just 46 usable pairs system-wide. Now, for each attribute,
+draw N_PER_CLASS (default 5) samples from EACH of up to
+N_TARGET_SPECIES_PER_ATTRIBUTE of that attribute's own positive species
+(species shuffled, tried in order, skipped if fewer than N_PER_CLASS
+valid instances are available -- moving to the next candidate species
+rather than padding with an under-sampled group) -- every species that
+ends up contributing to the output is GUARANTEED to clear the downstream
+3-sample threshold by construction, not by chance.
+
+N_TARGET_SPECIES_PER_ATTRIBUTE=6 (v53) hit 6/6 for every single one of
+the 87 attributes, including the rarest (only 10 candidate positive
+species total) -- a 100% qualification rate, meaning the cap, not species
+availability or validity-check dropout, was the binding constraint.
+Raised to 15 (v56, prompted directly: "Can we further increase the
+number of pairs?") after confirming real headroom exists (min positive-
+species count across all 87 groundable attributes is 10, mean 40.6,
+median 29 -- checked directly via load_class_attributes before raising
+the target, not assumed).
 """
 
 from __future__ import annotations
@@ -55,7 +81,8 @@ CLASS_ATTR_DIR = CUB_ROOT / "class_attr_data_10"
 RESULTS_DIR = Path("results")
 SEED = 42
 DEVICE = "cpu"
-N_PER_ATTRIBUTE = 15
+N_TARGET_SPECIES_PER_ATTRIBUTE = 15
+N_PER_CLASS = 5
 N_RANDOM_DRAWS = 5
 
 # CUB keypoint name -> part_id, from parts/parts.txt (see cards.data.cub_attributes.CUB_PART_NAMES)
@@ -125,43 +152,57 @@ def main():
         attr_name = attribute_names[attr_idx]
 
         positive_classes = [cid for cid, vec in class_attributes.items() if vec[attr_idx]]
-        candidate_ids = [i for cid in positive_classes for i in ids_by_class.get(cid, [])]
-        rng_py.shuffle(candidate_ids)
+        rng_py.shuffle(positive_classes)
 
-        n_done = 0
-        for image_id in candidate_ids:
-            if n_done >= N_PER_ATTRIBUTE:
+        n_draws = 0
+        qualifying_species = 0
+        species_tried = 0
+        for cid in positive_classes:
+            if qualifying_species >= N_TARGET_SPECIES_PER_ATTRIBUTE:
                 break
-            kp = keypoints.get(image_id, {}).get(part_id)
-            if kp is None or not kp[2]:
-                continue
-            x, y, _visible = kp
-            image_path = image_paths[image_id]
-            try:
-                silhouette = load_cub_segmentation(CUB_ROOT, image_id, image_paths)
-            except FileNotFoundError:
-                continue
-            image = Image.open(image_path).convert("RGB")
-            if silhouette.shape != (image.height, image.width) or silhouette.sum() == 0:
-                continue
-            target_area = PART_AREA_RATIO[part_name] * silhouette.sum()
-            patch_mask = keypoint_patch_mask(x, y, target_area, (image.height, image.width))
-            if not patch_mask.any():
-                continue
+            species_tried += 1
+            species_candidate_ids = list(ids_by_class.get(cid, []))
+            rng_py.shuffle(species_candidate_ids)
 
-            rng_np = np.random.default_rng(SEED + attr_idx * 1000 + n_done)
-            result = compute_faithfulness(
-                image=image, image_path=str(image_path), concept_number=attr_idx,
-                category="calibrated" if calibrated else "heuristic",
-                mask=patch_mask, model=model, rng=rng_np, n_random_draws=N_RANDOM_DRAWS,
-                fill_strategy="blur", device=DEVICE, target_class=class_labels[image_id] - 1,
-            )
-            results.append((result, attr_name, prefix, part_name))
-            n_done += 1
+            species_results = []
+            for image_id in species_candidate_ids:
+                if len(species_results) >= N_PER_CLASS:
+                    break
+                kp = keypoints.get(image_id, {}).get(part_id)
+                if kp is None or not kp[2]:
+                    continue
+                x, y, _visible = kp
+                image_path = image_paths[image_id]
+                try:
+                    silhouette = load_cub_segmentation(CUB_ROOT, image_id, image_paths)
+                except FileNotFoundError:
+                    continue
+                image = Image.open(image_path).convert("RGB")
+                if silhouette.shape != (image.height, image.width) or silhouette.sum() == 0:
+                    continue
+                target_area = PART_AREA_RATIO[part_name] * silhouette.sum()
+                patch_mask = keypoint_patch_mask(x, y, target_area, (image.height, image.width))
+                if not patch_mask.any():
+                    continue
+
+                rng_np = np.random.default_rng(SEED + attr_idx * 1000 + n_draws)
+                n_draws += 1
+                result = compute_faithfulness(
+                    image=image, image_path=str(image_path), concept_number=attr_idx,
+                    category="calibrated" if calibrated else "heuristic",
+                    mask=patch_mask, model=model, rng=rng_np, n_random_draws=N_RANDOM_DRAWS,
+                    fill_strategy="blur", device=DEVICE, target_class=class_labels[image_id] - 1,
+                )
+                species_results.append(result)
+
+            if len(species_results) >= 3:  # clears score_method_agreement's own min_samples_per_pair
+                results.extend((r, attr_name, prefix, part_name) for r in species_results)
+                qualifying_species += 1
+            # else: this species couldn't supply enough valid instances -- skip it, try the next positive species
 
         tag = "calibrated" if calibrated else "HEURISTIC"
-        print(f"[{tag:>10s}] {attr_name:<40s} ({part_name}): {n_done}/{N_PER_ATTRIBUTE} instances "
-              f"({len(candidate_ids)} candidates from {len(positive_classes)} positive species)", flush=True)
+        print(f"[{tag:>10s}] {attr_name:<40s} ({part_name}): {qualifying_species}/{N_TARGET_SPECIES_PER_ATTRIBUTE} "
+              f"qualifying species ({species_tried} tried, {len(positive_classes)} positive species total)", flush=True)
 
     with open(RESULTS_DIR / "cub_attribute_faithfulness.csv", "w", newline="") as f:
         base_fields = list(vars(results[0][0]).keys())
