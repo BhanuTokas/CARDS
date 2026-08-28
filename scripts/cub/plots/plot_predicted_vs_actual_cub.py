@@ -23,7 +23,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
 from cards.validation.broden_faithfulness import (  # noqa: E402

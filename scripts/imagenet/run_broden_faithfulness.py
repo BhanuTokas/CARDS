@@ -39,7 +39,7 @@ from PIL import Image
 from scipy.stats import ttest_rel
 
 sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from build_imagenet_slice import TARGET_CLASSES  # noqa: E402
 from cards.data.broden_raw import build_concept_index, concept_pixel_mask, load_index, load_label_table  # noqa: E402

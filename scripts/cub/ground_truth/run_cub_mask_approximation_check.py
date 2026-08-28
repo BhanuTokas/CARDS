@@ -26,7 +26,7 @@ import torch
 from PIL import Image
 from scipy.stats import pearsonr, spearmanr, ttest_rel
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from cards.data.cub_parts import (  # noqa: E402
     CUB70_TO_CUB_PART_ID,

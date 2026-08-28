@@ -44,8 +44,9 @@ import torch
 from omegaconf import OmegaConf
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "ablate"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
 from run_cards_cub_attributes import PREFIX_TEMPLATES  # noqa: E402

@@ -38,7 +38,7 @@ cache_dir: embedding_cache
 # only overwrote the saved direction post-hoc, fixed in cards.pipeline --
 # see build_query/orthogonalize_queries and notes/
 # cub_correlation_investigation.md v57+). Early CUB ablation evidence
-# (scripts/ablate_cards_cub_query_orthogonalize.py) with the fix live
+# (scripts/cub/ablate/ablate_cards_cub_query_orthogonalize.py) with the fix live
 # shows orthogonalizing the query before retrieval doesn't help and
 # trends slightly worse than not orthogonalizing (e.g. K=50/demean=False:
 # 55.0% sign agreement raw vs. 53.6% orthogonalized). Defaulting to

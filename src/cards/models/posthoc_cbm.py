@@ -9,7 +9,7 @@ Two things this needs that aren't hard CARDS dependencies:
     PosthocLinearCBM` (cavs/intercepts/norms are plain attributes on that
     class, not registered buffers, so a state_dict alone can't reconstruct
     it -- confirmed while investigating the checkpoint, see
-    scripts/cub_concept_bank_accuracies.py). Unpickling itself only needs
+    scripts/cub/analysis/cub_concept_bank_accuracies.py). Unpickling itself only needs
     torch/numpy/torchvision (already CARDS deps) to be importable through
     post_hoc_cbm's `models` package -- pytorchcv is only needed for the
     backbone this module loads itself, kept separate from post_hoc_cbm's

@@ -26,8 +26,9 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "ablate"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_cub_attributes import PREFIX_TEMPLATES  # noqa: E402
 from ablate_cards_cub_attributes import ALT_PREFIX_TEMPLATES, ENCODER_CONFIGS  # noqa: E402
