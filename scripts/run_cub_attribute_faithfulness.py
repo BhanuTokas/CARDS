@@ -48,7 +48,12 @@ Raised to 15 (v56, prompted directly: "Can we further increase the
 number of pairs?") after confirming real headroom exists (min positive-
 species count across all 87 groundable attributes is 10, mean 40.6,
 median 29 -- checked directly via load_class_attributes before raising
-the target, not assumed).
+the target, not assumed). Raised again to effectively uncapped (999,
+prompted directly: "Can we get the result on the complete list of
+pairs?" -- following up on the same feasibility check, which found the
+true uncapped total is 3537 pairs, computed as sum(n_positive_species)
+across all 87 attributes before this run) -- every attribute now draws
+from its ENTIRE positive-species pool, not a fixed-size subset.
 """
 
 from __future__ import annotations
@@ -81,7 +86,7 @@ CLASS_ATTR_DIR = CUB_ROOT / "class_attr_data_10"
 RESULTS_DIR = Path("results")
 SEED = 42
 DEVICE = "cpu"
-N_TARGET_SPECIES_PER_ATTRIBUTE = 15
+N_TARGET_SPECIES_PER_ATTRIBUTE = 999  # effectively uncapped -- max positive-species count across all 87 attributes is 192 (has_eye_color::black), so this exhausts every attribute's own full positive-species pool rather than truncating any of them
 N_PER_CLASS = 5
 N_RANDOM_DRAWS = 5
 

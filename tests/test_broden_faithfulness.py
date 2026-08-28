@@ -68,6 +68,89 @@ def test_mask_region_mean_fill_masked_pixels_are_imagenet_mean():
     assert tuple(result[0, 0]) == (124, 116, 104)
 
 
+def test_mask_region_white_fill_masked_pixels_are_white():
+    image = Image.new("RGB", (10, 10), color=(20, 15, 10))
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[2:8, 2:8] = True
+
+    result = np.array(mask_region(image, mask, strategy="white_fill"))
+
+    assert tuple(result[4, 4]) == (255, 255, 255)
+    assert tuple(result[0, 0]) == (20, 15, 10)
+
+
+def test_mask_region_zero_fill_noise_requires_rng():
+    image = Image.new("RGB", (10, 10), color=(20, 15, 10))
+    mask = np.ones((10, 10), dtype=bool)
+
+    with pytest.raises(ValueError):
+        mask_region(image, mask, strategy="zero_fill_noise")
+
+
+def test_mask_region_zero_fill_noise_centers_near_black_with_variance():
+    image = Image.new("RGB", (64, 64), color=(200, 50, 50))
+    mask = np.ones((64, 64), dtype=bool)
+    rng = np.random.default_rng(0)
+
+    result = np.array(mask_region(image, mask, strategy="zero_fill_noise", noise_std=20.0, rng=rng)).astype(np.float64)
+
+    # N(0, 20) clipped at 0 has a positive mean (negative tail collapses to
+    # 0 while the positive tail is untouched) -- expected clipped-normal
+    # mean is std/sqrt(2*pi) ~= 8.0, not exactly 0; a generous band around
+    # that catches implementation bugs without asserting an exact constant.
+    assert 3.0 < result.mean() < 15.0
+    assert result.std() > 5.0  # NOT flat/uniform like plain zero_fill
+
+
+def test_mask_region_zero_fill_noise_reproducible_with_same_rng_state():
+    image = Image.new("RGB", (10, 10), color=(200, 50, 50))
+    mask = np.ones((10, 10), dtype=bool)
+
+    result_a = mask_region(image, mask, strategy="zero_fill_noise", rng=np.random.default_rng(7))
+    result_b = mask_region(image, mask, strategy="zero_fill_noise", rng=np.random.default_rng(7))
+
+    assert np.array_equal(np.array(result_a), np.array(result_b))
+
+
+def test_mask_region_hue_shift_changes_only_masked_pixels():
+    image = Image.new("RGB", (10, 10), color=(200, 50, 50))
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[2:8, 2:8] = True
+
+    result = np.array(mask_region(image, mask, strategy="hue_shift"))
+    original = np.array(image)
+
+    assert not np.array_equal(result[4, 4], original[4, 4])
+    assert np.array_equal(result[0, 0], original[0, 0])
+
+
+def test_mask_region_hue_shift_180_degrees_gives_complementary_color():
+    # Pure red at max saturation/value, shifted 180 degrees, should land
+    # near pure cyan -- the complementary color, and the maximum possible
+    # hue distance (the strategy's own default).
+    image = Image.new("RGB", (4, 4), color=(255, 0, 0))
+    mask = np.ones((4, 4), dtype=bool)
+
+    result = np.array(mask_region(image, mask, strategy="hue_shift", hue_shift_degrees=180.0))[0, 0]
+
+    assert result[0] < 30  # red channel should have dropped to near-zero
+    assert result[1] > 200 and result[2] > 200  # green+blue (cyan) should dominate
+
+
+def test_mask_region_hue_shift_preserves_value_and_saturation():
+    # Luminance (V) and saturation (S) drive edges/texture/shape -- only
+    # H should move, confirming hue_shift is a color-only perturbation.
+    image = Image.new("RGB", (4, 4), color=(180, 90, 30))
+    mask = np.ones((4, 4), dtype=bool)
+
+    result = mask_region(image, mask, strategy="hue_shift", hue_shift_degrees=90.0)
+
+    _, s_before, v_before = image.convert("HSV").split()
+    _, s_after, v_after = result.convert("HSV").split()
+    assert np.array(s_before)[0, 0] == np.array(s_after)[0, 0]
+    assert np.array(v_before)[0, 0] == np.array(v_after)[0, 0]
+
+
 def test_mask_region_rejects_unknown_strategy():
     image = Image.new("RGB", (10, 10))
     mask = np.zeros((10, 10), dtype=bool)

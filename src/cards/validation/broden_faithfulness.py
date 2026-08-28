@@ -39,16 +39,65 @@ class MultiClassModel(Protocol):
 _IMAGENET_MEAN_RGB = (124, 116, 104)  # round(0.485*255), round(0.456*255), round(0.406*255)
 
 
-def mask_region(image: Image.Image, mask: np.ndarray, strategy: str = "blur", blur_sigma: float = 20.0) -> Image.Image:
+def mask_region(
+    image: Image.Image, mask: np.ndarray, strategy: str = "blur",
+    blur_sigma: float = 20.0, hue_shift_degrees: float = 180.0,
+    noise_std: float = 20.0, rng: np.random.Generator | None = None,
+) -> Image.Image:
     """Fills `mask` (True = region to remove) within `image`.
 
-    "blur" (default) is the recommended strategy: zero/mean fill creates
-    an out-of-distribution "hole" that can itself be salient for reasons
-    unrelated to concept content (a known issue in the deletion-metric
-    literature, e.g. Petsiuk et al.'s RISE explicitly prefers blur over
-    constant fill for this reason) -- blur instead preserves plausible
-    low-frequency scene structure while still destroying the concept's
-    own fine detail.
+    "blur" (default) is the recommended general-purpose strategy: zero/
+    mean fill creates an out-of-distribution "hole" that can itself be
+    salient for reasons unrelated to concept content (a known issue in
+    the deletion-metric literature, e.g. Petsiuk et al.'s RISE explicitly
+    prefers blur over constant fill for this reason) -- blur instead
+    preserves plausible low-frequency scene structure while still
+    destroying the concept's own fine detail.
+
+    "hue_shift" is a COLOR-SPECIFIC alternative (not a general-purpose
+    replacement for blur): rotates the masked region's hue by
+    `hue_shift_degrees` (180 degrees = each color's exact complementary
+    opposite, the default and the maximum possible hue distance) while
+    leaving saturation and value (i.e. luminance-driven edges/texture/
+    shape) untouched. This targets exactly the gap blur and zero_fill
+    each leave open on their own: blur is confirmed (notes/
+    cub_correlation_investigation.md v61) to leave most of a masked
+    region's own mean color intact (a low-pass filter, by construction),
+    so it under-erases color-defined concepts specifically; zero_fill
+    erases color completely but also erases the region's own spatial
+    structure and creates an out-of-distribution "hole," a confound of
+    its own. hue_shift erases color information (the model can no longer
+    read off the ORIGINAL hue) while keeping the perturbed region
+    in-distribution-shaped (still has real luminance edges/texture,
+    still looks like SOME part of a bird, just the wrong color) -- a
+    genuinely surgical color-only perturbation, useful for isolating
+    color-attribute faithfulness specifically from pattern/shape.
+
+    "zero_fill_noise" and "white_fill" both target a narrower confound
+    zero_fill can have for specific concept VALUES that happen to
+    coincide with the fill color's own identity, not attribute types in
+    general (checked directly, notes/cub_correlation_investigation.md
+    v61's own "black"/"solid" check found this confound doesn't actually
+    suppress delta_p in practice -- these two variants exist to test that
+    more rigorously, not because the plain zero_fill numbers looked
+    obviously wrong).
+    - "zero_fill_noise": zero_fill plus per-pixel Gaussian noise
+      (`noise_std`, 0-255 scale) -- a flat, perfectly uniform black patch
+      is itself unlike any real photographic region (even a genuinely
+      "solid"-patterned one still has natural sensor/texture noise), so
+      plain zero_fill's own "obviously edited" flatness could be an
+      independent salience confound for pattern="solid" concepts
+      specifically, where the ORIGINAL region is also uniform and the
+      absence-of-fine-detail can't tell masked from unmasked apart on its
+      own. Requires `rng` (reuses whatever np.random.Generator the caller
+      already threads through compute_faithfulness's random-placement
+      draws, for reproducibility -- raises if omitted rather than
+      silently seeding its own).
+    - "white_fill": the exact opposite constant color from zero_fill's
+      black -- for color="black" concepts specifically, where the
+      region's own real (dark, if imperfectly so) pixel values are
+      closest in RGB space to zero_fill's own fill color, maximizing
+      contrast instead.
     """
     if mask.shape != (image.height, image.width):
         raise ValueError(f"mask shape {mask.shape} doesn't match image size {(image.height, image.width)}")
@@ -59,6 +108,18 @@ def mask_region(image: Image.Image, mask: np.ndarray, strategy: str = "blur", bl
         filled = Image.new("RGB", image.size, _IMAGENET_MEAN_RGB)
     elif strategy == "zero_fill":
         filled = Image.new("RGB", image.size, (0, 0, 0))
+    elif strategy == "white_fill":
+        filled = Image.new("RGB", image.size, (255, 255, 255))
+    elif strategy == "zero_fill_noise":
+        if rng is None:
+            raise ValueError("strategy='zero_fill_noise' requires an rng (np.random.Generator) for the noise draw")
+        noise = rng.normal(loc=0.0, scale=noise_std, size=(image.height, image.width, 3))
+        filled = Image.fromarray(np.clip(noise, 0, 255).astype(np.uint8), mode="RGB")
+    elif strategy == "hue_shift":
+        h, s, v = image.convert("HSV").split()
+        shift = round(hue_shift_degrees / 360.0 * 256.0)
+        h_shifted = ((np.array(h, dtype=np.int16) + shift) % 256).astype(np.uint8)
+        filled = Image.merge("HSV", (Image.fromarray(h_shifted, mode="L"), s, v)).convert("RGB")
     else:
         raise ValueError(f"unknown strategy {strategy!r}")
 
@@ -183,7 +244,7 @@ def compute_faithfulness(
     predicted_class = target_class if target_class is not None else int(torch.argmax(logits0).item())
     p0 = F.softmax(logits0, dim=0)[predicted_class].item()
 
-    masked_image = mask_region(image, mask, strategy=fill_strategy)
+    masked_image = mask_region(image, mask, strategy=fill_strategy, rng=rng)
     x_masked = model.preprocess(masked_image).unsqueeze(0).to(device)
     logits_masked = model(x_masked)[0]
     p_masked = F.softmax(logits_masked, dim=0)[predicted_class].item()
@@ -192,7 +253,7 @@ def compute_faithfulness(
     random_masks, n_fallbacks = random_placements(mask, rng, n_draws=n_random_draws)
     random_deltas = []
     for rmask in random_masks:
-        r_image = mask_region(image, rmask, strategy=fill_strategy)
+        r_image = mask_region(image, rmask, strategy=fill_strategy, rng=rng)
         x_r = model.preprocess(r_image).unsqueeze(0).to(device)
         logits_r = model(x_r)[0]
         p_r = F.softmax(logits_r, dim=0)[predicted_class].item()
