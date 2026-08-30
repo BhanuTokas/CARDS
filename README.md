@@ -266,15 +266,15 @@ Standalone scripts (plain `argparse`, not Hydra-wired — they're one-off
 checks, not part of the ablation grid) for the design doc's Section 2
 validation experiments:
 
-- **`scripts/broden_purity_check.py`** — Section 2 item 5: precision@k /
+- **`scripts/imagenet/broden_purity_check.py`** — Section 2 item 5: precision@k /
   negative-recall@k / average precision of CARDS' Step 1-2 CLIP retrieval
   against Broden's ground-truth positives/negatives, per concept. Useful for
   setting a per-concept reliability gate (mirroring CCE's 0.7-accuracy
   filter) before trusting attribution scores for a given concept.
-- **`scripts/broden_label_flags.py`** — surfaces the ground-truth positives
+- **`scripts/imagenet/broden_label_flags.py`** — surfaces the ground-truth positives
   CLIP ranks least like the concept, and the negatives it ranks most like
   the concept, as candidates for manual label-quality review.
-- **`scripts/cub_concept_bank_accuracies.py`** — recovers human-readable
+- **`scripts/cub/analysis/cub_concept_bank_accuracies.py`** — recovers human-readable
   names for the anonymous 112-concept bank baked into `../post_hoc_cbm`'s
   trained CUB PCBM checkpoint (the standard Concept Bottleneck Models
   312→112 CUB attribute filtering) and reports each concept's train/test CAV

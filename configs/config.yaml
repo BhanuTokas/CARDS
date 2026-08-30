@@ -33,7 +33,18 @@ pool_source: val
 cache_dir: embedding_cache
 
 # Step 5: only meaningful (and only applied) when len(concepts) > 1.
-orthogonalize: true
+# Was `true` by default, but that setting predates orthogonalize
+# actually affecting retrieval/scoring at all (previously a no-op that
+# only overwrote the saved direction post-hoc, fixed in cards.pipeline --
+# see build_query/orthogonalize_queries and notes/
+# cub_correlation_investigation.md v57+). Early CUB ablation evidence
+# (scripts/cub/ablate/ablate_cards_cub_query_orthogonalize.py) with the fix live
+# shows orthogonalizing the query before retrieval doesn't help and
+# trends slightly worse than not orthogonalizing (e.g. K=50/demean=False:
+# 55.0% sign agreement raw vs. 53.6% orthogonalized). Defaulting to
+# false until/unless a config is found where it actually helps; still
+# available as an explicit opt-in.
+orthogonalize: false
 
 # Step 1: de-mean t_c against a text-modality reference center before
 # retrieval, to counteract the CLIP modality gap (see

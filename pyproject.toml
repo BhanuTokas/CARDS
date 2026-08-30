@@ -66,6 +66,14 @@ pcbm-training = [
 imagenet = [
     "pyarrow>=17.0",
 ]
+# Only needed by scripts/run_tcav.py (Phase 2 of the CARDS vs. TCAV vs.
+# PCBM comparison, notes/pcbm_correlation_investigation.md) -- explains
+# the native ImageNet backbone (cards.models.backbones.BACKBONES)
+# directly via captum.concept.TCAV. Not used by any code under src/cards'
+# own Steps 1-7 pipeline -- a comparison-arm dependency only.
+tcav = [
+    "captum>=0.7",
+]
 
 [dependency-groups]
 dev = [

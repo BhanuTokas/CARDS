@@ -18,12 +18,14 @@ from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS
 from cards.directions.estimate import ConceptDirection
 from cards.pipeline import (
     ConceptResult,
+    build_query,
     compute_delta_c,
     instantiate_encoder,
     instantiate_model,
     load_and_preprocess,
     load_dataset_pool,
     normalize_score,
+    orthogonalize_queries,
     process_concept,
     resolve_demean_reference_concepts,
     retrieve_concept_sets,
@@ -177,6 +179,85 @@ def test_process_concept_default_text_center_is_none():
     default = process_concept(cfg, encoder, pool, "dog")
 
     assert explicit_none.present_indices == default.present_indices
+
+
+def test_process_concept_query_param_used_verbatim():
+    # A `query` far from what build_concept_query("dog", ...) would
+    # produce confirms process_concept actually retrieves against the
+    # passed-in query instead of silently rebuilding its own.
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "naive"}, "k": 3})
+    encoder = _LookupTextEncoder(dim=8)
+
+    built_in = process_concept(cfg, encoder, pool, "dog")
+    explicit_query = process_concept(cfg, encoder, pool, "dog", query=pool.embeddings[7])
+
+    assert explicit_query.present_indices != built_in.present_indices
+
+
+def test_process_concept_query_takes_precedence_over_text_center():
+    # Passing both isn't contradictory, just redundant -- query wins,
+    # text_center is ignored entirely (not blended, not averaged).
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "naive"}, "k": 3})
+    encoder = _LookupTextEncoder(dim=8)
+    t_c = encoder.encode_text(["a photo of dog"])[0]
+
+    with_query_only = process_concept(cfg, encoder, pool, "dog", query=pool.embeddings[7])
+    with_query_and_center = process_concept(
+        cfg, encoder, pool, "dog", text_center=t_c * 0.9, query=pool.embeddings[7]
+    )
+
+    assert with_query_only.present_indices == with_query_and_center.present_indices
+
+
+# ---- build_query / orthogonalize_queries ----
+
+
+def test_build_query_matches_build_concept_query():
+    from cards.concepts.prompts import build_concept_query
+
+    encoder = _LookupTextEncoder(dim=8)
+    assert torch.equal(build_query(encoder, "dog"), build_concept_query("dog", encoder))
+
+
+def test_orthogonalize_queries_produces_orthonormal_set():
+    encoder = _LookupTextEncoder(dim=8)
+    queries = {c: build_query(encoder, c) for c in ["dog", "cat", "bird"]}
+
+    orthogonalized = orthogonalize_queries(queries)
+
+    vectors = torch.stack([orthogonalized[c] for c in ["dog", "cat", "bird"]])
+    gram = vectors @ vectors.T
+    assert torch.allclose(gram, torch.eye(3), atol=1e-4)
+
+
+def test_orthogonalize_queries_single_concept_stays_unit_norm():
+    encoder = _LookupTextEncoder(dim=8)
+    queries = {"dog": build_query(encoder, "dog")}
+
+    orthogonalized = orthogonalize_queries(queries)
+
+    assert torch.allclose(orthogonalized["dog"].norm(), torch.tensor(1.0), atol=1e-5)
+
+
+def test_orthogonalize_queries_changes_retrieval():
+    # The whole point of moving orthogonalization before retrieval: it
+    # must actually change which images get retrieved for at least one
+    # concept, not just cosmetically relabel the same result (the bug
+    # this replaces -- see pipeline.py's orthogonalize_queries docstring).
+    pool = _make_pool(30, dim=8)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "naive"}, "k": 5})
+    encoder = _LookupTextEncoder(dim=8)
+    concepts = ["dog", "cat", "bird", "fish", "tree"]
+
+    raw_queries = {c: build_query(encoder, c) for c in concepts}
+    orth_queries = orthogonalize_queries(raw_queries)
+
+    raw_results = {c: process_concept(cfg, encoder, pool, c, query=raw_queries[c]) for c in concepts}
+    orth_results = {c: process_concept(cfg, encoder, pool, c, query=orth_queries[c]) for c in concepts}
+
+    assert any(raw_results[c].present_indices != orth_results[c].present_indices for c in concepts)
 
 
 # ---- resolve_demean_reference_concepts ----
