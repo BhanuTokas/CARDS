@@ -39,12 +39,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from cards.data.cub_attributes import groundable_attributes, load_attribute_names, load_class_attributes  # noqa: E402
-from cards.data.cub_parts import load_images_txt  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
-from concepts.concept_utils import ListDataset  # noqa: E402
+from captum.concept import TCAV, Concept
+from concepts.concept_utils import ListDataset
 
-from captum.concept import TCAV, Concept  # noqa: E402
+from cards.data.cub_attributes import (
+    groundable_attributes,
+    load_attribute_names,
+    load_class_attributes,
+)
+from cards.data.cub_parts import load_images_txt
+from cards.models.backbones import BACKBONES
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"

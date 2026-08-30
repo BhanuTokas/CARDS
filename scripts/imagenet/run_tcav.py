@@ -28,11 +28,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from build_imagenet_slice import TARGET_CLASSES  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
-from concepts.concept_utils import ListDataset  # noqa: E402
+from build_imagenet_slice import TARGET_CLASSES
+from captum.concept import TCAV, Concept
+from concepts.concept_utils import ListDataset
 
-from captum.concept import TCAV, Concept  # noqa: E402
+from cards.models.backbones import BACKBONES
 
 BRODEN_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\broden_concepts")
 IMAGENET_SLICE_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\imagenet_slice")

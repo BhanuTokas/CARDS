@@ -30,16 +30,20 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.data.cub_attributes import (  # noqa: E402
-    CALIBRATED_PARTS,
+from cards.data.cub_attributes import (
     PART_AREA_RATIO,
     groundable_attributes,
     load_attribute_names,
     load_class_attributes,
 )
-from cards.data.cub_parts import keypoint_patch_mask, load_cub_segmentation, load_images_txt, load_keypoints  # noqa: E402
-from cards.models.posthoc_cbm import cub_preprocess  # noqa: E402
-from cards.validation.broden_faithfulness import compute_faithfulness  # noqa: E402
+from cards.data.cub_parts import (
+    keypoint_patch_mask,
+    load_cub_segmentation,
+    load_images_txt,
+    load_keypoints,
+)
+from cards.models.posthoc_cbm import cub_preprocess
+from cards.validation.broden_faithfulness import compute_faithfulness
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"
@@ -160,14 +164,18 @@ def main():
         target_class = cid - 1
 
         def run(mask, tag):
+            # image/image_path/target_class are re-bound fresh each outer-loop
+            # iteration and this closure is invoked immediately below (never
+            # stored for later), so ruff's B023 loop-variable-capture warning
+            # is a false positive here, not a real late-binding bug.
             nonlocal n_draws
             rng_np = np.random.default_rng(SEED + 900_000 + n_draws)
             n_draws += 1
             return compute_faithfulness(
-                image=image, image_path=str(image_path), concept_number=-1,
+                image=image, image_path=str(image_path), concept_number=-1,  # noqa: B023
                 category="multiconcept", mask=mask, model=model, rng=rng_np,
                 n_random_draws=N_RANDOM_DRAWS, fill_strategy="blur", device=DEVICE,
-                target_class=target_class,
+                target_class=target_class,  # noqa: B023
             )
 
         result_a = run(mask_a, "A")
@@ -207,7 +215,7 @@ def main():
           f"(positive = super-additive/redundancy signature, ~0 = independent, negative = interference)")
 
     from scipy.stats import wilcoxon
-    stat, p = wilcoxon(deltas_ab, additive)
+    _stat, p = wilcoxon(deltas_ab, additive)
     print(f"Wilcoxon signed-rank test (AB vs. additive prediction): p={p:.4g}")
     print(f"fraction where combined > additive (super-additive): {(deltas_ab > additive).mean():.1%}")
     print(f"fraction where combined < additive (sub-additive):   {(deltas_ab < additive).mean():.1%}")

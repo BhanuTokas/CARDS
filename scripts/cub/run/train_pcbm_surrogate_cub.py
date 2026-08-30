@@ -27,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from cards.data.cub_parts import load_images_txt  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
+from cards.data.cub_parts import load_images_txt
+from cards.models.backbones import BACKBONES
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 CONCEPT_BANK_PATH = "trained_concepts_new/cub_parts/resnet18_cub/cub_parts_resnet18_cub_0.1_100.pkl"
@@ -138,7 +138,7 @@ def main():
     ).to(DEVICE)
 
     print("\n=== computing train embeddings/projections (surrogate labels) ===", flush=True)
-    train_emb, train_surrogate, train_true = embed_and_predict(
+    train_emb, train_surrogate, _train_true = embed_and_predict(
         train_ids, image_paths, class_labels, native_model, feature_extractor, preprocess, DEVICE, "train"
     )
     train_proj = posthoc_layer.compute_dist(torch.tensor(train_emb, device=DEVICE).float()).detach().cpu().numpy()

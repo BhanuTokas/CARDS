@@ -26,7 +26,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from cards.validation.broden_faithfulness import (  # noqa: E402
+from cards.validation.broden_faithfulness import (
     FaithfulnessResult,
     _aggregate_faithfulness_pairs,
     score_method_agreement,

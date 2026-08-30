@@ -21,10 +21,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-import torch  # noqa: E402
+import torch
+from build_imagenet_slice import TARGET_CLASSES
 
-from build_imagenet_slice import TARGET_CLASSES  # noqa: E402
-from cards.validation.broden_faithfulness import FaithfulnessResult, score_method_agreement  # noqa: E402
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    score_method_agreement,
+)
 
 RESULTS_DIR = Path("results")
 CONCEPT_TO_LABEL = {"car": 38, "cat": 105, "dog": 93, "chair": 36, "bottle": 70}  # same as Phase 3's driver

@@ -47,7 +47,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.data.cub_parts import (  # noqa: E402
+from cards.data.cub_parts import (
     CUB70_TO_CUB_PART_ID,
     keypoint_patch_mask,
     load_cub70_mask,
@@ -55,8 +55,11 @@ from cards.data.cub_parts import (  # noqa: E402
     load_images_txt,
     load_keypoints,
 )
-from cards.models.posthoc_cbm import cub_preprocess  # noqa: E402
-from cards.validation.broden_faithfulness import FaithfulnessResult, compute_faithfulness  # noqa: E402
+from cards.models.posthoc_cbm import cub_preprocess
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    compute_faithfulness,
+)
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 CUB70_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB70_part_segmentation")

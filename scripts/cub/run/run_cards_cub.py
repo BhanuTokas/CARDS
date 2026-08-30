@@ -39,13 +39,18 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.data.cub_parts import load_images_txt  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
-from cards.pipeline import instantiate_encoder  # noqa: E402
-from cards.retrieval.aligned import aligned_retrieval  # noqa: E402
-from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool  # noqa: E402
-from cards.retrieval.retrieve import retrieve_top_bottom_k  # noqa: E402
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query  # noqa: E402
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
+from cards.data.cub_parts import load_images_txt
+from cards.models.backbones import BACKBONES
+from cards.pipeline import instantiate_encoder
+from cards.retrieval.aligned import aligned_retrieval
+from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
+from cards.retrieval.retrieve import retrieve_top_bottom_k
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 RESULTS_DIR = Path("results")

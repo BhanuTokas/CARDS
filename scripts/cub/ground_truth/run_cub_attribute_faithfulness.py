@@ -69,16 +69,21 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.data.cub_attributes import (  # noqa: E402
+from cards.data.cub_attributes import (
     CALIBRATED_PARTS,
     PART_AREA_RATIO,
     groundable_attributes,
     load_attribute_names,
     load_class_attributes,
 )
-from cards.data.cub_parts import keypoint_patch_mask, load_cub_segmentation, load_images_txt, load_keypoints  # noqa: E402
-from cards.models.posthoc_cbm import cub_preprocess  # noqa: E402
-from cards.validation.broden_faithfulness import compute_faithfulness  # noqa: E402
+from cards.data.cub_parts import (
+    keypoint_patch_mask,
+    load_cub_segmentation,
+    load_images_txt,
+    load_keypoints,
+)
+from cards.models.posthoc_cbm import cub_preprocess
+from cards.validation.broden_faithfulness import compute_faithfulness
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"

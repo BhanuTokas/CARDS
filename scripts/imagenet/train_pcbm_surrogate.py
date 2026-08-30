@@ -30,8 +30,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from build_imagenet_slice import TARGET_CLASSES  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
+from build_imagenet_slice import TARGET_CLASSES
+
+from cards.models.backbones import BACKBONES
 
 CONCEPT_BANK_PATH = "trained_concepts_new/broden_baseline/resnet18_torchvision/broden_resnet18_torchvision_0.01_50.pkl"
 IMAGENET_SLICE_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\imagenet_slice")
@@ -104,7 +105,7 @@ def main():
     ).to(DEVICE)
 
     print("\n=== computing train embeddings/projections (surrogate labels) ===", flush=True)
-    train_emb, train_surrogate, train_true = load_split("train", native_model, feature_extractor, preprocess, DEVICE)
+    train_emb, train_surrogate, _train_true = load_split("train", native_model, feature_extractor, preprocess, DEVICE)
     train_proj = posthoc_layer.compute_dist(torch.tensor(train_emb, device=DEVICE).float()).detach().cpu().numpy()
 
     print("\n=== computing val embeddings/projections (held out) ===", flush=True)

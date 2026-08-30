@@ -49,12 +49,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "ablate"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from run_cards_cub_attributes import PREFIX_TEMPLATES  # noqa: E402
+from run_cards_cub_attributes import PREFIX_TEMPLATES
 
-from cards.data.cub_attributes import groundable_attributes, load_attribute_names  # noqa: E402
-from cards.data.cub_parts import load_images_txt  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
-from cards.pipeline import instantiate_encoder  # noqa: E402
+from cards.data.cub_attributes import groundable_attributes, load_attribute_names
+from cards.data.cub_parts import load_images_txt
+from cards.models.backbones import BACKBONES
+from cards.pipeline import instantiate_encoder
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"

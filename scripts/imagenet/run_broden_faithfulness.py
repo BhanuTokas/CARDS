@@ -41,10 +41,15 @@ from scipy.stats import ttest_rel
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from build_imagenet_slice import TARGET_CLASSES  # noqa: E402
-from cards.data.broden_raw import build_concept_index, concept_pixel_mask, load_index, load_label_table  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
-from cards.validation.broden_faithfulness import compute_faithfulness  # noqa: E402
+from build_imagenet_slice import TARGET_CLASSES
+
+from cards.data.broden_raw import (
+    build_concept_index,
+    concept_pixel_mask,
+    load_index,
+)
+from cards.models.backbones import BACKBONES
+from cards.validation.broden_faithfulness import compute_faithfulness
 
 NETDISSECT_ROOT = Path(r"C:\Users\btokas\Projects\NetDissect\dataset\broden1_224")
 RESULTS_DIR = Path("results")
@@ -125,7 +130,7 @@ def process_one(record, label_number, category, model, rng_seed) -> object | Non
 
 def summarize(all_results: list[tuple[str, object]], label: str) -> list[dict]:
     per_concept_summary = []
-    for concept_name in TEST_CONCEPTS:
+    for concept_name, label_number in TEST_CONCEPTS.items():
         concept_deltas = [r.delta_p for name, r in all_results if name == concept_name]
         random_deltas = [r.random_delta_p_mean for name, r in all_results if name == concept_name]
         mean_concept_delta = float(np.mean(concept_deltas)) if concept_deltas else float("nan")
@@ -139,7 +144,7 @@ def summarize(all_results: list[tuple[str, object]], label: str) -> list[dict]:
         per_concept_summary.append(
             {
                 "concept": concept_name,
-                "label_number": TEST_CONCEPTS[concept_name],
+                "label_number": label_number,
                 "n_images": len(concept_deltas),
                 "mean_concept_delta_p": mean_concept_delta,
                 "mean_random_delta_p": mean_random_delta,
@@ -264,7 +269,6 @@ def main():
     model = NativeModelAdapter(spec, DEVICE)
 
     print("Loading Broden index (63,305 records)...", flush=True)
-    labels = load_label_table(NETDISSECT_ROOT)
     records = load_index(NETDISSECT_ROOT)
     print("Building object-category concept index (decodes each object mask once)...", flush=True)
     object_index = build_concept_index(records, "object")

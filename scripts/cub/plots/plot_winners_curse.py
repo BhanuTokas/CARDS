@@ -53,7 +53,7 @@ def main():
 
     for i, drop in enumerate(DROPS):
         ax.annotate("", xy=(x[i] + width / 2, NEW_SIGN[i] + 8), xytext=(x[i] - width / 2, OVERLAP_SIGN[i] + 8),
-                     arrowprops=dict(arrowstyle="->", color="#666666", lw=1.2))
+                     arrowprops={"arrowstyle": "->", "color": "#666666", "lw": 1.2})
         ax.text(x[i], max(OVERLAP_SIGN[i], NEW_SIGN[i]) + 11, f"{drop:+.1f} pts", ha="center", fontsize=8.5,
                  color="#666666", style="italic")
 

@@ -133,7 +133,7 @@ def _area_matched_rectangle(mask: np.ndarray, rng: np.random.Generator) -> np.nd
     same area, not the same shape."""
     h, w = mask.shape
     area = int(mask.sum())
-    side = max(1, min(int(round(np.sqrt(area))), h, w))
+    side = max(1, min(round(np.sqrt(area)), h, w))
     y0 = int(rng.integers(0, h - side + 1))
     x0 = int(rng.integers(0, w - side + 1))
     candidate = np.zeros_like(mask)

@@ -21,12 +21,12 @@ frozen weights -- never two separately-loaded copies that could drift.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import torch
-import torch.nn as nn
 from PIL import Image
+from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
 
 from cards.models.posthoc_cbm import cub_preprocess

@@ -43,9 +43,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from cards.data.cub_parts import load_images_txt  # noqa: E402
-from cards.models.backbones import BACKBONES  # noqa: E402
-from cards.pipeline import instantiate_encoder  # noqa: E402
+from cards.data.cub_parts import load_images_txt
+from cards.models.backbones import BACKBONES
+from cards.pipeline import instantiate_encoder
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 CONCEPT_BANK_PATH = "trained_concepts_new/cub_official/siglip/cub_official_siglip_0.1_100.pkl"

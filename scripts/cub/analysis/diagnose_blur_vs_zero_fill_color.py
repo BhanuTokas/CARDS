@@ -34,10 +34,15 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.data.cub_attributes import PART_AREA_RATIO  # noqa: E402
-from cards.data.cub_parts import keypoint_patch_mask, load_cub_segmentation, load_images_txt, load_keypoints  # noqa: E402
-from cards.models.posthoc_cbm import cub_preprocess  # noqa: E402
-from cards.validation.broden_faithfulness import compute_faithfulness  # noqa: E402
+from cards.data.cub_attributes import PART_AREA_RATIO
+from cards.data.cub_parts import (
+    keypoint_patch_mask,
+    load_cub_segmentation,
+    load_images_txt,
+    load_keypoints,
+)
+from cards.models.posthoc_cbm import cub_preprocess
+from cards.validation.broden_faithfulness import compute_faithfulness
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 RESULTS_DIR = Path("results")
