@@ -9,6 +9,7 @@ from cards.data.celeba_attributes import (
     ATTRIBUTE_TO_REGIONS,
     CELEBA_MASK_CLASSES,
     EXCLUDED_ATTRIBUTES,
+    GROUNDABLE_CONCEPTS,
     PILOT_CONCEPTS,
     TARGET_CLASSES,
     groundable_attributes,
@@ -83,3 +84,13 @@ def test_pilot_concepts_span_multiple_distinct_regions():
     # dynamic attributes) -- not accidentally all mapping to one region
     regions_used = {r for c in PILOT_CONCEPTS for r in ATTRIBUTE_TO_REGIONS[c]}
     assert len(regions_used) >= 5
+
+
+def test_groundable_concepts_matches_attribute_to_regions_exactly():
+    assert set(GROUNDABLE_CONCEPTS) == set(ATTRIBUTE_TO_REGIONS)
+    assert len(GROUNDABLE_CONCEPTS) == len(set(GROUNDABLE_CONCEPTS))  # no duplicates
+    assert GROUNDABLE_CONCEPTS == sorted(GROUNDABLE_CONCEPTS)
+
+
+def test_pilot_concepts_are_a_subset_of_groundable_concepts():
+    assert set(PILOT_CONCEPTS) <= set(GROUNDABLE_CONCEPTS)

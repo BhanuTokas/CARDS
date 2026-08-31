@@ -107,6 +107,15 @@ PILOT_CONCEPTS: list[str] = [
     "Narrow_Eyes", "Eyeglasses", "Pale_Skin", "Wearing_Hat",
 ]
 
+# All 26 groundable attributes (the pilot's own 8 plus 18 more) -- the
+# scale-up target once the pilot's own infrastructure was proven (v65-v71),
+# mirroring how CUB's 8-part pilot (v33-v37) scaled to its full 87-
+# attribute bank (v38+). Sorted alphabetically for a stable, deterministic
+# script order (ATTRIBUTE_TO_REGIONS is itself insertion-ordered, not
+# alphabetical -- sorting here decouples script iteration order from that
+# dict's own declaration order).
+GROUNDABLE_CONCEPTS: list[str] = sorted(ATTRIBUTE_TO_REGIONS)
+
 
 def load_attribute_names(path: Path) -> list[str]:
     """The 40 official CelebA attribute names, in their canonical order --
