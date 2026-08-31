@@ -1,0 +1,5 @@
+# Attractive/Young are the target classes; the other 38 CelebA attributes
+# are concepts (src/cards/data/celeba_attributes.py) -- see
+# notes/celeba_correlation_investigation.md v65 for why.
+name: celeba
+root: ../Datasets/CelebAMask-HQ
