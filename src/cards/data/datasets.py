@@ -1,10 +1,11 @@
-"""Dataset loaders: CIFAR-10/100, CUB, CCE MetaDataset, Broden.
+"""Dataset loaders: CIFAR-10/100, CUB, CelebA/CelebAMask-HQ, CCE
+MetaDataset, Broden.
 
 See Section 5 of the design doc for the role each dataset plays.
 
-load_cifar / load_cub / load_metadataset all return a flat list of
-(image_path, label) pairs -- a generic pool for cards.retrieval.pool.
-CandidatePool to encode and retrieve from.
+load_cifar / load_cub / load_celeba / load_metadataset all return a flat
+list of (image_path, label) pairs -- a generic pool for
+cards.retrieval.pool.CandidatePool to encode and retrieve from.
 
 Broden is different: the local copy at ../Datasets/broden_concepts is
 already split per-concept into ground-truth positives/negatives (from prior
@@ -97,6 +98,46 @@ def load_cub(root: Path, split: str = "val") -> list[tuple[Path, int]]:
         for image_id in image_paths
         if split_flags[image_id] == want_train
     )
+
+
+def load_celeba(root: Path, split: str = "val") -> list[tuple[Path, int]]:
+    """CelebAMask-HQ, split via cards.data.celeba.split_celebamask_hq --
+    the exact same seed/stratification-key/train_test_split call Phase 1's
+    own classifier training used (scripts/celeba/build/
+    train_attractive_young_classifier.py), so `split="val"` here draws only
+    from the 4,500 images that classifier never trained on -- consistent
+    with load_cub's own "val" == held-out-from-training convention.
+
+    Label = 2*int(Attractive) + int(Young) (0-3): CelebA has no single
+    per-image "class" the way CUB's species id is one, so this is the
+    natural joint stratum over the two target attributes this whole track
+    is built around (see cards.data.celeba_attributes.TARGET_CLASSES).
+    """
+    from cards.data.celeba import load_celebamask_hq_image_paths, split_celebamask_hq
+    from cards.data.celeba_attributes import (
+        TARGET_CLASSES,
+        load_attribute_labels,
+        load_attribute_names,
+    )
+
+    if split not in ("train", "val"):
+        raise ValueError(f"split must be 'train' or 'val', got {split!r}")
+
+    root = Path(root)
+    image_paths_by_idx = load_celebamask_hq_image_paths(root)
+    attr_names = load_attribute_names(root / "CelebAMask-HQ-attribute-anno.txt")
+    attr_labels_by_file = load_attribute_labels(root / "CelebAMask-HQ-attribute-anno.txt")
+    target_indices = [attr_names.index(t) for t in TARGET_CLASSES]
+
+    train_hq, val_hq = split_celebamask_hq(image_paths_by_idx, attr_labels_by_file, target_indices)
+    chosen_hq = train_hq if split == "train" else val_hq
+
+    result = []
+    for hq_idx in chosen_hq:
+        attractive, young = attr_labels_by_file[f"{hq_idx}.jpg"][target_indices]
+        label = 2 * int(attractive) + int(young)
+        result.append((image_paths_by_idx[hq_idx], label))
+    return sorted(result)
 
 
 def load_metadataset(

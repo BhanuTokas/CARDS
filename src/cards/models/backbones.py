@@ -23,13 +23,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 from PIL import Image
 from torch import nn
+from torchvision import transforms
 from torchvision.models import ResNet18_Weights, resnet18
 
 from cards.models.posthoc_cbm import cub_preprocess
+
+_IMAGENET_MEAN = [0.485, 0.456, 0.406]
+_IMAGENET_STD = [0.229, 0.224, 0.225]
+_CELEBA_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young.pt")
 
 
 @dataclass
@@ -60,6 +66,34 @@ def _resnet18_feature_extractor(native_model: nn.Module) -> nn.Module:
     `load_native()` returned (not a second load), so PCBM's and TCAV's
     view of the backbone are guaranteed identical."""
     return nn.Sequential(*list(native_model.children())[:-1])
+
+
+def _load_celeba_attractive_young_native() -> nn.Module:
+    """Phase 1's own fine-tuned checkpoint
+    (scripts/celeba/build/train_attractive_young_classifier.py), not stock
+    ImageNet weights -- a 2-task 4-way-logit head ([0:2]=Attractive,
+    [2:4]=Young), same torchvision resnet18 architecture as `resnet18`
+    above, confirmed directly via named_children() to still expose
+    `layer4`/`fc` under those same names once the checkpoint is loaded."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 4)
+    state = torch.load(_CELEBA_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _celeba_preprocess() -> transforms.Compose:
+    """Matches train_attractive_young_classifier.py's own val_transform
+    exactly (Resize to 224, no augmentation) -- ImageNet mean/std since
+    the backbone started from ImageNet-pretrained init and was never
+    renormalized during fine-tuning."""
+    return transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
+        ]
+    )
 
 
 def _load_resnet18_cub_native() -> nn.Module:
@@ -93,5 +127,13 @@ BACKBONES: dict[str, BackboneSpec] = {
         load_native=_load_resnet18_cub_native,
         preprocess=cub_preprocess(),
         feature_extractor=_resnet18_cub_feature_extractor,
+    ),
+    "celeba_attractive_young": BackboneSpec(
+        name="celeba_attractive_young",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_celeba_attractive_young_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_resnet18_feature_extractor,
     ),
 }

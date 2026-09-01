@@ -31,7 +31,7 @@ from cards.concepts.prompts import (
     compute_text_center,
     demean_query,
 )
-from cards.data.datasets import load_cifar, load_cub, load_metadataset
+from cards.data.datasets import load_celeba, load_cifar, load_cub, load_metadataset
 from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
 from cards.encoders.base import ImageTextEncoder
@@ -66,6 +66,8 @@ def load_dataset_pool(cfg: DictConfig) -> list[tuple[Path, int]]:
         return load_cifar(Path(cfg.dataset.root), variant=cfg.dataset.variant, split=cfg.pool_source)
     if name == "cub":
         return load_cub(Path(cfg.dataset.root), split=cfg.pool_source)
+    if name == "celeba":
+        return load_celeba(Path(cfg.dataset.root), split=cfg.pool_source)
     if name == "metadataset":
         return load_metadataset(
             Path(cfg.dataset.root), scenario=cfg.dataset.scenario, split=cfg.pool_source
