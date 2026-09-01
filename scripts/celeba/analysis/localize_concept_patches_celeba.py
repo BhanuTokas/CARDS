@@ -155,6 +155,28 @@ def upsample_to_mask(sim_grid: np.ndarray, target_hw: tuple[int, int]) -> np.nda
     return upsampled[0, 0].numpy()
 
 
+def otsu_threshold(values: np.ndarray, n_bins: int = 256) -> float:
+    """Per-image adaptive threshold (no external calibration, no fixed
+    area budget) -- picks the cutoff maximizing between-class variance
+    of the histogram, i.e. the split that best separates the score
+    distribution into two clusters. Proposed as a fix for the fixed
+    top-15% threshold's own scale-mismatch problem (v69: wildly
+    oversized for CUB's small parts, calibrated for CelebA's much
+    larger facial features instead). No skimage dependency in this env
+    -- standard vectorized histogram-based Otsu, verified against a
+    synthetic bimodal distribution before use.
+    """
+    hist, bin_edges = np.histogram(values, bins=n_bins)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    weight1 = np.cumsum(hist)
+    weight2 = np.cumsum(hist[::-1])[::-1]
+    mean1 = np.cumsum(hist * bin_centers) / np.where(weight1 == 0, 1, weight1)
+    mean2 = (np.cumsum((hist * bin_centers)[::-1]) / np.where(weight2[::-1] == 0, 1, weight2[::-1]))[::-1]
+    variance12 = weight1[:-1] * weight2[1:] * (mean1[:-1] - mean2[1:]) ** 2
+    idx = int(np.argmax(variance12))
+    return float(bin_centers[idx])
+
+
 def main():
     RESULTS_DIR.mkdir(exist_ok=True)
     rng_py = random.Random(SEED)
