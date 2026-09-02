@@ -32,9 +32,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
-from cards.data.celeba import load_celebamask_hq_image_paths, split_celebamask_hq
-from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS, TARGET_CLASSES, load_attribute_labels, load_attribute_names
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
+from cards.data.celeba_attributes import (
+    GROUNDABLE_CONCEPTS,
+    load_attribute_labels,
+    load_attribute_names,
+)
 from cards.data.datasets import load_celeba
 from cards.pipeline import instantiate_encoder
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool

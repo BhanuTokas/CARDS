@@ -23,8 +23,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 from localize_concept_patches_celeba import patch_similarity_grid, upsample_to_mask
 from run_cards_cub_attributes import PREFIX_TEMPLATES
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
-from cards.data.cub_attributes import load_attribute_names
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.cub_parts import load_images_txt
 from cards.pipeline import instantiate_encoder
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
@@ -32,7 +36,6 @@ from cards.retrieval.retrieve import retrieve_top_bottom_k
 from cards.validation.broden_faithfulness import mask_region
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
-ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"
 RESULTS_DIR = Path("results")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50
@@ -57,9 +60,6 @@ def main():
     siglip_model, siglip_preprocess = encoder.model, encoder.preprocess
     text_center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
 
-    attribute_names = load_attribute_names(ATTRIBUTE_NAMES_PATH)
-    name_to_idx = {name: i for i, name in enumerate(attribute_names)}
-
     image_paths = load_images_txt(CUB_ROOT)
     class_labels = {}
     for line in (CUB_ROOT / "image_class_labels.txt").read_text().splitlines():
@@ -77,7 +77,7 @@ def main():
     pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)
 
     n_rows = len(ATTRIBUTES_TO_SHOW) * N_EXAMPLES_PER_ATTR
-    fig, axes = plt.subplots(n_rows, 4, figsize=(12, 3 * n_rows))
+    _fig, axes = plt.subplots(n_rows, 4, figsize=(12, 3 * n_rows))
 
     row = 0
     for attr_name in ATTRIBUTES_TO_SHOW:

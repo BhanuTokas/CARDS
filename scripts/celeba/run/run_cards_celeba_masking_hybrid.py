@@ -46,14 +46,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 from localize_concept_patches_celeba import patch_similarity_grid, upsample_to_mask
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT, TASK_POSITIVE_LOGIT_INDEX
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS, PILOT_CONCEPTS, TARGET_CLASSES
 from cards.data.datasets import load_celeba
 from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
-from cards.validation.broden_faithfulness import FaithfulnessResult, mask_region, score_method_agreement, score_sign_agreement
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    mask_region,
+    score_method_agreement,
+    score_sign_agreement,
+)
 
 CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
 RESULTS_DIR = Path("results")

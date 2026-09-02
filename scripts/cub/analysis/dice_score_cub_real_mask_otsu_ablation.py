@@ -25,7 +25,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from localize_concept_patches_celeba import otsu_threshold, patch_similarity_grid, upsample_to_mask
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.cub_parts import load_cub70_mask, load_images_txt
 from cards.pipeline import instantiate_encoder
 

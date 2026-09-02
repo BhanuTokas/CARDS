@@ -21,7 +21,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")  # needed to unpickle the saved PosthocLinearCBM checkpoint
 
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS, TARGET_CLASSES
-from cards.validation.broden_faithfulness import FaithfulnessResult, score_method_agreement, score_sign_agreement
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    score_method_agreement,
+    score_sign_agreement,
+)
 
 RESULTS_DIR = Path("results")
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}

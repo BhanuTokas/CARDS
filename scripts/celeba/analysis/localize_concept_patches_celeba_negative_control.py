@@ -29,13 +29,28 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
+from localize_concept_patches_celeba import patch_similarity_grid, upsample_to_mask
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
-from cards.data.celeba import load_celebamask_hq_image_paths, load_celebamask_hq_mask, split_celebamask_hq
-from cards.data.celeba_attributes import ATTRIBUTE_TO_REGIONS, PILOT_CONCEPTS, TARGET_CLASSES, load_attribute_labels, load_attribute_names
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
+from cards.data.celeba import (
+    load_celebamask_hq_image_paths,
+    load_celebamask_hq_mask,
+    split_celebamask_hq,
+)
+from cards.data.celeba_attributes import (
+    ATTRIBUTE_TO_REGIONS,
+    PILOT_CONCEPTS,
+    TARGET_CLASSES,
+    load_attribute_labels,
+    load_attribute_names,
+)
 from cards.pipeline import instantiate_encoder
-from localize_concept_patches_celeba import patch_similarity_grid, upsample_to_mask
 
 CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
 SEED = 42

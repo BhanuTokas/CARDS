@@ -1,5 +1,24 @@
 # Attractive/Young are the target classes; the other 38 CelebA attributes
 # are concepts (src/cards/data/celeba_attributes.py) -- see
 # notes/celeba_correlation_investigation.md v65 for why.
+#
+# Recommended invocation, the masking hybrid (the only method that's found
+# real, cross-encoder-replicated signal on CelebA -- v81/v83/v84):
+#   uv run python scripts/run_attribution.py dataset=celeba encoder=siglip \
+#     model=celeba_attractive_young scoring_mode=masking_hybrid \
+#     orthogonalize=true concepts='[...]'
+# (model.task_name=Young to explain the other task; defaults to Attractive)
+#
+# orthogonalize=true is NOT a general win -- it only helps on SigLIP (v93:
+# no effect on CLIP/open_clip_h, actively HURTS Perception). k=50 (the
+# pipeline default) is best paired with orthogonalize=true (v91); k=15 is
+# better without it (v89). demean_query has no clean winner either way
+# (v86) -- the pipeline default (true) is defensible, not proven.
+# This combination is the single best-supported result in the whole track
+# (Attractive rho=+0.523 p=0.006, sign=80.8% p=0.0025 -- v87), but it's one
+# ablation run, not independently re-validated on a fresh sample, against
+# a ~12-14-cell multiple-comparisons tally across the whole hybrid-tuning
+# thread -- see notes/celeba_correlation_investigation.md v86-v93 for the
+# full ablation history before treating any of this as a settled default.
 name: celeba
 root: ../Datasets/CelebAMask-HQ

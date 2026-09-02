@@ -33,7 +33,12 @@ from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
-from cards.validation.broden_faithfulness import FaithfulnessResult, mask_region, score_method_agreement, score_sign_agreement
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    mask_region,
+    score_method_agreement,
+    score_sign_agreement,
+)
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"

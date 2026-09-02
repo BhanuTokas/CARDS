@@ -56,7 +56,11 @@ from cards.concepts.prompts import (
     compute_text_center,
     demean_query,
 )
-from cards.data.celeba import load_celebamask_hq_image_paths, load_celebamask_hq_mask, split_celebamask_hq
+from cards.data.celeba import (
+    load_celebamask_hq_image_paths,
+    load_celebamask_hq_mask,
+    split_celebamask_hq,
+)
 from cards.data.celeba_attributes import (
     ATTRIBUTE_TO_REGIONS,
     PILOT_CONCEPTS,
@@ -79,7 +83,7 @@ def patch_similarity_grid(model, preprocess, image: Image.Image, query_vec: torc
     trunk = model.visual.trunk
     feats = trunk.forward_features(pixels)  # (1, N, C)
     n_patches = feats.shape[1]
-    grid_side = int(round(n_patches**0.5))
+    grid_side = round(n_patches**0.5)
     assert grid_side * grid_side == n_patches, f"non-square patch grid: {n_patches}"
 
     per_patch_in = feats[0].unsqueeze(1)  # (N, 1, C) -- each patch its own length-1 sequence
@@ -111,7 +115,7 @@ def patch_similarity_grid_linear_proj(model, preprocess, image: Image.Image, que
     ln = v.ln_post(feats)  # (1, N+1, C) -- token 0 is CLS, applied uniformly
     patch_tokens = ln[0, 1:]  # (N, C)
     n_patches = patch_tokens.shape[0]
-    grid_side = int(round(n_patches**0.5))
+    grid_side = round(n_patches**0.5)
     assert grid_side * grid_side == n_patches, f"non-square patch grid: {n_patches}"
 
     per_patch_out = F.normalize(patch_tokens @ v.proj, dim=-1)
@@ -133,7 +137,7 @@ def patch_similarity_grid_perception(model, preprocess, image: Image.Image, quer
     v = model.visual
     patch_tokens = v.forward_features(pixels, norm=True, strip_cls_token=True)[0]  # (N, C)
     n_patches = patch_tokens.shape[0]
-    grid_side = int(round(n_patches**0.5))
+    grid_side = round(n_patches**0.5)
     assert grid_side * grid_side == n_patches, f"non-square patch grid: {n_patches}"
 
     per_patch_out = F.normalize(patch_tokens @ v.proj, dim=-1)

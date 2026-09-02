@@ -18,7 +18,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.validation.broden_faithfulness import FaithfulnessResult, score_method_agreement, score_sign_agreement
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    score_method_agreement,
+    score_sign_agreement,
+)
 
 RESULTS_DIR = Path("results")
 

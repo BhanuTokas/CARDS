@@ -30,14 +30,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 from localize_concept_patches_celeba import PATCH_SIMILARITY_FN, upsample_to_mask
 from run_cards_cub_attributes import PREFIX_TEMPLATES
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.cub_attributes import groundable_attributes, load_attribute_names
 from cards.data.cub_parts import load_images_txt
 from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
-from cards.validation.broden_faithfulness import FaithfulnessResult, mask_region, score_method_agreement, score_sign_agreement
+from cards.validation.broden_faithfulness import (
+    FaithfulnessResult,
+    mask_region,
+    score_method_agreement,
+    score_sign_agreement,
+)
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 ATTRIBUTE_NAMES_PATH = CUB_ROOT / "attributes" / "new_attributes.txt"
