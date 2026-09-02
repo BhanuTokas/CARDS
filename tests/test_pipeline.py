@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 
+from cards.attribution.masking_mode import MaskingScoreResult
 from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS
 from cards.directions.estimate import ConceptDirection
 from cards.pipeline import (
@@ -30,6 +31,7 @@ from cards.pipeline import (
     resolve_demean_reference_concepts,
     retrieve_concept_sets,
     save_directions,
+    save_masking_hybrid_scores,
     score_masking_hybrid_concepts,
 )
 from cards.retrieval.pool import CandidatePool
@@ -464,6 +466,31 @@ def test_save_directions_round_trips(tmp_path):
     loaded = torch.load(path, weights_only=False)
     assert loaded["dog"]["magnitude"] == pytest.approx(2.0)
     assert torch.allclose(loaded["dog"]["unit_vector"], torch.tensor([1.0, 0.0]))
+
+
+# ---- save_masking_hybrid_scores ----
+
+
+def test_save_masking_hybrid_scores_round_trips(tmp_path):
+    scores = {
+        "dog": MaskingScoreResult(
+            raw_score=1.5,
+            delta_scores=[1.0, 2.0],
+            selected_strategies=["blur", "zero_fill"],
+            angles_degrees=[10.0, 20.0],
+            n_skipped_degenerate=1,
+        )
+    }
+    path = tmp_path / "out" / "masking_hybrid_scores.pt"
+
+    save_masking_hybrid_scores(scores, path)
+
+    loaded = torch.load(path, weights_only=False)
+    assert loaded["dog"]["raw_score"] == pytest.approx(1.5)
+    assert loaded["dog"]["delta_scores"] == [1.0, 2.0]
+    assert loaded["dog"]["selected_strategies"] == ["blur", "zero_fill"]
+    assert loaded["dog"]["angles_degrees"] == [10.0, 20.0]
+    assert loaded["dog"]["n_skipped_degenerate"] == 1
 
 
 # ---- instantiate_encoder ----

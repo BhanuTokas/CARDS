@@ -347,6 +347,28 @@ def save_directions(results: list[ConceptResult], path: Path) -> None:
     )
 
 
+def save_masking_hybrid_scores(scores: dict[str, MaskingScoreResult], path: Path) -> None:
+    """Persists cfg.scoring_mode == "masking_hybrid"'s per-concept results
+    (raw_score plus the underlying per-image delta_scores/selected_
+    strategies/angles_degrees/n_skipped_degenerate) alongside directions.pt
+    -- mirrors save_directions' own shape/convention, so this mode's
+    results survive past the log line rather than needing scraping."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            concept: {
+                "raw_score": result.raw_score,
+                "delta_scores": result.delta_scores,
+                "selected_strategies": result.selected_strategies,
+                "angles_degrees": result.angles_degrees,
+                "n_skipped_degenerate": result.n_skipped_degenerate,
+            }
+            for concept, result in scores.items()
+        },
+        path,
+    )
+
+
 def run(cfg: DictConfig) -> list[ConceptResult]:
     set_seed(cfg.seed)
     log.info("Config:\n%s", cfg)
@@ -422,7 +444,9 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
         # docstring / notes/celeba_correlation_investigation.md's design
         # discussion for why global_score's two existing formulas don't
         # cleanly transfer to a same-image paired-delta score.
-        score_masking_hybrid_concepts(cfg, encoder, black_box, pool, concepts, results)
+        hybrid_scores = score_masking_hybrid_concepts(cfg, encoder, black_box, pool, concepts, results)
+        save_masking_hybrid_scores(hybrid_scores, output_dir / "masking_hybrid_scores.pt")
+        log.info("masking_hybrid scores (raw_score + per-image detail) saved to %s", output_dir / "masking_hybrid_scores.pt")
         return results
 
     for concept, result in zip(concepts, results):
