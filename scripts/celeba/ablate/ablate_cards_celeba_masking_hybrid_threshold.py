@@ -1,7 +1,8 @@
 """Ablation of the masking hybrid's own localization threshold --
 top_pct value AND Otsu's method -- prompted directly ("Where was the 15%
 threshold decided on?" -> "Can we run an ablation with Otsu's and at
-different PCT level?").
+different PCT level?" -> "Can we cancel this sweep and rerun with
+orthogonalize = True").
 
 TOP_PCT=15 was never actually tuned on CelebA: it was picked as a
 plausible round number when the pseudo-mask was first built (v79), and
@@ -12,15 +13,27 @@ oversized for tiny body parts. This ablation finally sweeps the value on
 CelebA itself, scored the same way every other axis ablation in this
 track has been (v86-v93): full 26-concept x 2-task hybrid re-score
 against the real masking-based faithfulness ground truth
-(`results/celeba_full_faithfulness.csv`), holding every other setting at
-the v82 baseline (demean_query=True, orthogonalize=False, K=50, SigLIP,
-the same 7-strategy fill family).
+(`results/celeba_full_faithfulness.csv`).
 
-top_pct=15 itself is NOT recomputed -- v82's own existing raw scores
-(`results/cards_celeba_masking_hybrid_scores_best_of_family_full.csv`)
-already ARE that data point, reused as baseline rather than redone,
-matching this track's own established discipline (e.g. the query
-ablation script's demean=True reuse).
+orthogonalize=True (v87/v91's own best-supported SigLIP config: rho=
++0.523 p=0.006, sign=80.8% p=0.0025 at top_pct=15) is held fixed here,
+not orthogonalize=False -- an earlier version of this ablation used
+False (matching the K/demean/phrasing axis ablations' own default
+baseline), and was cancelled/rerun at the user's request once that
+choice was made explicit, since threshold x orthogonalize is exactly
+the kind of interaction v91 already found for K x orthogonalize (K's
+own trend reverses once orthogonalize=True is on) -- unknown here until
+tested. Because orthogonalize jointly Lowdin-orthogonalizes ALL 26
+concepts' queries at once (`cards.pipeline.orthogonalize_queries`), it
+needs every query built up front, so queries are constructed once,
+before the per-config loop, same as ablate_cards_celeba_masking_hybrid_
+query.py's own orthogonalize handling.
+
+No existing raw-score CSV exists at top_pct=15+orthogonalize=True (only
+aggregate rho/sign CSVs were saved by the prior orthogonalize ablations,
+v87/v91/v93) -- top_pct=15 is therefore run fresh here as a real config,
+unlike the orthogonalize=False version of this script which could reuse
+v82's own top_pct=15 raw scores directly.
 
 Uses the NEW integrated library code (cards.attribution.localization,
 already unit-tested and pipeline-wired -- see notes/
@@ -28,7 +41,7 @@ celeba_correlation_investigation.md v94) for localization/thresholding
 specifically, rather than re-duplicating that logic inline a 12th time
 -- this ablation doubles as a fresh real-usage exercise of that code.
 
-6 configs (top_pct in [5, 10, 20, 25, 30] + otsu) x 26 concepts x 50
+6 configs (top_pct in [5, 10, 15, 20, 25, 30] + otsu) x 26 concepts x 50
 images each -- the same per-image cost as one full hybrid run, x6.
 """
 
@@ -58,7 +71,7 @@ from cards.concepts.prompts import (
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS, TARGET_CLASSES
 from cards.data.datasets import load_celeba
 from cards.models.backbones import BACKBONES
-from cards.pipeline import instantiate_encoder
+from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
 from cards.validation.broden_faithfulness import (
@@ -77,10 +90,17 @@ FILL_STRATEGIES = ["blur", "zero_fill", "mean_fill", "hue_shift", "white_fill", 
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
 
 # (label, threshold_method, top_pct) -- top_pct is ignored by "otsu".
-# 15 is NOT included: v82's existing raw scores already are that point.
+# top_pct_2.5 was added after the fact ("Can we run an additional pass at
+# 2.5%") once 5/10/15/20 showed a clean monotonic rho trend as top_pct
+# shrinks -- run standalone via ablate_cards_celeba_masking_hybrid_
+# threshold_2_5pct.py (to avoid re-running the other 7 configs), not
+# through this script directly; listed here so CONFIGS stays the full
+# source-of-truth set for any future rerun.
 CONFIGS = [
+    ("top_pct_2.5", "top_pct", 2.5),
     ("top_pct_5", "top_pct", 5),
     ("top_pct_10", "top_pct", 10),
+    ("top_pct_15", "top_pct", 15),
     ("top_pct_20", "top_pct", 20),
     ("top_pct_25", "top_pct", 25),
     ("top_pct_30", "top_pct", 30),
@@ -100,17 +120,6 @@ def load_records_by_task() -> dict[str, list[FaithfulnessResult]]:
                 z_score=float(row["z_score"]), n_random_fallbacks=int(row["n_random_fallbacks"]),
             ))
     return by_task
-
-
-def load_baseline_top_pct_15() -> dict[str, dict[tuple[int, int], float]]:
-    """v82's existing top_pct=15 raw scores, reused (not recomputed) as
-    this sweep's own middle data point."""
-    scores_by_task: dict[str, dict[tuple[int, int], float]] = {t: {} for t in TARGET_CLASSES}
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_scores_best_of_family_full.csv", newline="") as f:
-        for row in csv.DictReader(f):
-            concept_idx = CONCEPT_TO_IDX[row["concept_name"]]
-            scores_by_task[row["target_task"]][(concept_idx, 1)] = float(row["hybrid_raw_score"])
-    return scores_by_task
 
 
 def main():
@@ -135,13 +144,15 @@ def main():
     spec = BACKBONES["celeba_attractive_young"]
     native_model = spec.load_native().to(DEVICE).eval()
 
-    # Every config uses the SAME queries (demean=True/orth=False, v82's
-    # own baseline) -- only threshold_method/top_pct varies -- so build
-    # them once, outside the config loop.
-    queries: dict[str, torch.Tensor] = {}
-    for concept_name in GROUNDABLE_CONCEPTS:
-        t_c = build_concept_query(CONCEPT_QUERY_TEXT[concept_name], encoder)
-        queries[concept_name] = demean_query(t_c, text_center)
+    # orthogonalize=True (v87/v91's SigLIP-best config) held fixed across
+    # every config here -- needs all 26 queries built up front, jointly
+    # Lowdin-orthogonalized ONCE, reused unchanged across the whole
+    # threshold sweep (only the localization threshold varies below).
+    raw_queries = {
+        c: demean_query(build_concept_query(CONCEPT_QUERY_TEXT[c], encoder), text_center)
+        for c in GROUNDABLE_CONCEPTS
+    }
+    queries = orthogonalize_queries(raw_queries)
 
     results = []  # (label, task_name, rho_result, sign_result)
     all_rows = []  # (label, concept_name, target_task, hybrid_raw_score)
@@ -211,19 +222,7 @@ def main():
                       f"p={rho_result.spearman_p:.4g} | sign={sign_result.agreement_frac:.1%} "
                       f"({sign_result.n_agree}/{sign_result.n_pairs}) binom_p={sign_result.binom_p:.4g}", flush=True)
 
-    # Fold in the reused, NOT-recomputed top_pct=15 baseline for a complete table.
-    baseline_scores_by_task = load_baseline_top_pct_15()
-    print("\n=== top_pct_15 (method=top_pct, top_pct=15) -- REUSED from v82, not recomputed ===", flush=True)
-    for task_name in TARGET_CLASSES:
-        rho_result = score_method_agreement(records_by_task[task_name], baseline_scores_by_task[task_name])
-        sign_result = score_sign_agreement(records_by_task[task_name], baseline_scores_by_task[task_name])
-        results.append(("top_pct_15", task_name, rho_result, sign_result))
-        if rho_result is not None:
-            print(f"  [{task_name}] n={rho_result.n_pairs} rho={rho_result.spearman_rho:+.4f} "
-                  f"p={rho_result.spearman_p:.4g} | sign={sign_result.agreement_frac:.1%} "
-                  f"({sign_result.n_agree}/{sign_result.n_pairs}) binom_p={sign_result.binom_p:.4g}", flush=True)
-
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_ablation.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_orthogonalize_ablation.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["config", "target_task", "n_pairs", "spearman_rho", "spearman_p", "sign_agreement", "n_agree", "binom_p"])
         for label, task_name, rho_result, sign_result in results:
@@ -233,17 +232,17 @@ def main():
                 writer.writerow([label, task_name, rho_result.n_pairs, rho_result.spearman_rho, rho_result.spearman_p,
                                   sign_result.agreement_frac, sign_result.n_agree, sign_result.binom_p])
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_ablation_raw_scores.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_orthogonalize_ablation_raw_scores.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["config", "concept_name", "target_task", "hybrid_raw_score"])
         writer.writerows(all_rows)
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_ablation_skip_counts.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_orthogonalize_ablation_skip_counts.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["config", "concept_name", "n_present", "n_skipped_degenerate"])
         writer.writerows(skip_rows)
 
-    print(f"\nSaved {len(results)} (config, task) rows to results/cards_celeba_masking_hybrid_threshold_ablation.csv")
+    print(f"\nSaved {len(results)} (config, task) rows to results/cards_celeba_masking_hybrid_threshold_orthogonalize_ablation.csv")
 
 
 if __name__ == "__main__":

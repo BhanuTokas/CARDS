@@ -7,7 +7,12 @@ import pytest
 import torch
 from PIL import Image
 
-from cards.attribution.localization import localize_concept, otsu_threshold, threshold_mask
+from cards.attribution.localization import (
+    concept_zscore_cutoff,
+    localize_concept,
+    otsu_threshold,
+    threshold_mask,
+)
 
 
 class _FakePatchEncoder:
@@ -103,3 +108,46 @@ def test_otsu_threshold_separates_bimodal_distribution():
     assert 3.0 < t < 7.0  # clearly between the two clusters
     frac_above = (data > t).mean()
     assert 0.10 < frac_above < 0.25  # roughly the high-cluster's own share (200/1200)
+
+
+# ---- concept_zscore_cutoff / threshold_mask(method="fixed") ----
+
+
+def test_concept_zscore_cutoff_matches_hand_computed_pooled_stats():
+    maps = [np.array([[0.0, 2.0], [4.0, 6.0]]), np.array([[8.0, 10.0], [12.0, 14.0]])]
+    pooled = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0])
+
+    cutoff = concept_zscore_cutoff(maps, k=1.0)
+
+    assert cutoff == pytest.approx(pooled.mean() + pooled.std())
+
+
+def test_concept_zscore_cutoff_pools_pixels_not_per_image_means():
+    # One map with a sharp peak, one flat -- a mean-of-per-image-means
+    # would treat both images equally regardless of pixel count/spread;
+    # pooling should weight the peaked map's larger internal std more.
+    peaked = np.array([0.0, 0.0, 0.0, 100.0])
+    flat = np.array([5.0, 5.0, 5.0, 5.0])
+
+    pooled_cutoff = concept_zscore_cutoff([peaked, flat], k=1.0)
+    combined = np.concatenate([peaked, flat])
+
+    assert pooled_cutoff == pytest.approx(combined.mean() + combined.std())
+    # Sanity: this must differ from naively averaging each map's own
+    # mean+std (25.0+43.3 vs. 5.0+0.0, averaged -> a different number).
+    naive = np.mean([peaked.mean() + peaked.std(), flat.mean() + flat.std()])
+    assert pooled_cutoff != pytest.approx(naive)
+
+
+def test_threshold_mask_fixed_uses_cutoff_as_is():
+    sim_map = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+    mask = threshold_mask(sim_map, method="fixed", cutoff=2.5)
+
+    assert np.array_equal(mask, np.array([[False, False], [True, True]]))
+
+
+def test_threshold_mask_fixed_requires_cutoff():
+    sim_map = np.zeros((2, 2))
+    with pytest.raises(ValueError):
+        threshold_mask(sim_map, method="fixed")

@@ -78,7 +78,31 @@ def otsu_threshold(values: np.ndarray, n_bins: int = 256) -> float:
     return float(bin_centers[idx])
 
 
-def threshold_mask(sim_map: np.ndarray, top_pct: float = 15, method: str = "top_pct") -> np.ndarray:
+def concept_zscore_cutoff(sim_maps: list[np.ndarray], k: float) -> float:
+    """Pooled mean + k*std across multiple similarity maps -- typically
+    every present-set image for ONE concept, giving a per-concept-
+    calibrated cutoff rather than top_pct's fixed area budget or Otsu's
+    bimodal-split assumption (see threshold_mask's own docstring for why
+    Otsu underperforms here; this is a third alternative, prompted
+    directly: "What if, alternatively we computed a threshold for each
+    concept based on some statistics?" -> "I am inclined towards per
+    concept statistics"). Unlike a single global absolute cutoff, this
+    adapts automatically to each concept's own raw similarity scale --
+    load-bearing since demean_query deliberately leaves the query
+    non-unit-norm, so different concepts' raw dot-product magnitudes
+    aren't directly comparable to begin with.
+
+    Pools ALL pixels from ALL maps into one distribution before taking
+    mean/std (not a mean-of-per-image-means), so images with sharper
+    peaks contribute proportionally rather than being averaged away.
+    """
+    pooled = np.concatenate([m.flatten() for m in sim_maps])
+    return float(pooled.mean() + k * pooled.std())
+
+
+def threshold_mask(
+    sim_map: np.ndarray, top_pct: float = 15, method: str = "top_pct", cutoff: float | None = None
+) -> np.ndarray:
     """Binarizes a similarity map (from localize_concept) into a boolean
     mask, `True` = the localized concept region.
 
@@ -88,11 +112,19 @@ def threshold_mask(sim_map: np.ndarray, top_pct: float = 15, method: str = "top_
     percent of pixels by similarity score.
     "otsu": see otsu_threshold's own docstring for why this isn't the
     default.
+    "fixed": an explicit, externally-computed `cutoff` (e.g. from
+    concept_zscore_cutoff) applied as-is -- this method doesn't compute
+    its own cutoff from `sim_map`, since the whole point of a
+    per-concept-calibrated threshold is that it's derived from MULTIPLE
+    images pooled together, not any single map being thresholded here.
     """
     if method == "top_pct":
         cutoff = np.percentile(sim_map, 100 - top_pct)
     elif method == "otsu":
         cutoff = otsu_threshold(sim_map.flatten())
+    elif method == "fixed":
+        if cutoff is None:
+            raise ValueError("method='fixed' requires an explicit cutoff")
     else:
         raise ValueError(f"unknown threshold method {method!r}")
     return sim_map >= cutoff
