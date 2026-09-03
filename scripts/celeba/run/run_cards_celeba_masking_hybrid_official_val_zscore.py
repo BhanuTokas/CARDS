@@ -78,7 +78,7 @@ RESULTS_DIR = Path("results")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50
 SEED = 42
-Z_K = 1.0  # the best-known threshold config (see notes v94 addendum)
+ALPHA = 1.0  # the best-known threshold config (see notes v94 addendum)
 FILL_STRATEGIES = ["blur", "zero_fill", "mean_fill", "hue_shift", "white_fill", "zero_fill_noise", "noise_then_blur"]
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
 
@@ -120,7 +120,7 @@ def load_baseline_k1_scores() -> dict[str, dict[str, float]]:
     scores = {t: {} for t in TARGET_CLASSES}
     with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation_raw_scores.csv", newline="") as f:
         for row in csv.DictReader(f):
-            if float(row["k"]) == Z_K:
+            if float(row["k"]) == ALPHA:
                 scores[row["target_task"]][row["concept_name"]] = float(row["hybrid_raw_score"])
     return scores
 
@@ -166,7 +166,7 @@ def main():
             image = Image.open(pool.paths[idx]).convert("RGB")
             sim_map = localize_concept(encoder, image, t_c, (image.height, image.width))
             cached.append((idx, image, sim_map))
-        cutoff = concept_zscore_cutoff([sm for _, _, sm in cached], Z_K)
+        cutoff = concept_zscore_cutoff([sm for _, _, sm in cached], ALPHA)
 
         delta_logits = {t: [] for t in TARGET_CLASSES}
         n_skipped = 0

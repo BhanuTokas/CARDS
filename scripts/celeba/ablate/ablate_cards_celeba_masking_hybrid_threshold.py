@@ -154,26 +154,40 @@ def main():
     }
     queries = orthogonalize_queries(raw_queries)
 
-    results = []  # (label, task_name, rho_result, sign_result)
+    # concept-outer / config-inner (fixed after the fact, prompted by "Is
+    # there any speed optimizations possible in code right now?" -- this
+    # script originally looped config-outer, which redundantly recomputed
+    # retrieval + localization (an encoder forward pass) once per config
+    # even though neither depends on the threshold at all, only the
+    # masking step below does. Mirrors the z-score script's own
+    # concept-outer/k-inner caching design. Does not change any reported
+    # number -- v95's own results above were already produced this way
+    # in substance, just less efficiently.
+    hybrid_scores_by_config: dict[str, dict[str, dict[tuple[int, int], float]]] = {
+        label: {t: {} for t in TARGET_CLASSES} for label, _, _ in CONFIGS
+    }
     all_rows = []  # (label, concept_name, target_task, hybrid_raw_score)
     skip_rows = []  # (label, concept_name, n_present, n_skipped_degenerate)
 
-    for label, threshold_method, top_pct in CONFIGS:
-        print(f"\n=== {label} (method={threshold_method}, top_pct={top_pct}) ===", flush=True)
-        hybrid_scores_by_task: dict[str, dict[tuple[int, int], float]] = {t: {} for t in TARGET_CLASSES}
+    for c_i, concept_name in enumerate(GROUNDABLE_CONCEPTS):
+        t_c = queries[concept_name]
+        t_c_dev = t_c.to(DEVICE)
+        concept_idx = CONCEPT_TO_IDX[concept_name]
 
-        for c_i, concept_name in enumerate(GROUNDABLE_CONCEPTS):
-            t_c = queries[concept_name]
-            t_c_dev = t_c.to(DEVICE)
-            concept_idx = CONCEPT_TO_IDX[concept_name]
+        present_indices, _ = retrieve_top_bottom_k(pool, t_c, K)
+        cached = []  # (idx, image, sim_map)
+        for idx in present_indices:
+            image = Image.open(pool.paths[idx]).convert("RGB")
+            sim_map = localize_concept(encoder, image, t_c, (image.height, image.width))
+            cached.append((idx, image, sim_map))
 
-            present_indices, _ = retrieve_top_bottom_k(pool, t_c, K)
+        print(f"[{c_i + 1:>2d}/{len(GROUNDABLE_CONCEPTS)}] {concept_name:<20s}", flush=True)
+
+        for label, threshold_method, top_pct in CONFIGS:
             delta_logits = {t: [] for t in TARGET_CLASSES}
             n_skipped = 0
 
-            for idx in present_indices:
-                image = Image.open(pool.paths[idx]).convert("RGB")
-                sim_map = localize_concept(encoder, image, t_c, (image.height, image.width))
+            for idx, image, sim_map in cached:
                 mask = threshold_mask(sim_map, top_pct=top_pct or 15, method=threshold_method)
                 if not mask.any() or mask.all():
                     n_skipped += 1
@@ -207,12 +221,13 @@ def main():
             skip_rows.append((label, concept_name, len(present_indices), n_skipped))
             for task_name in TARGET_CLASSES:
                 score = float(np.mean(delta_logits[task_name])) if delta_logits[task_name] else 0.0
-                hybrid_scores_by_task[task_name][(concept_idx, 1)] = score
+                hybrid_scores_by_config[label][task_name][(concept_idx, 1)] = score
                 all_rows.append((label, concept_name, task_name, score))
 
-            print(f"  [{c_i + 1:>2d}/{len(GROUNDABLE_CONCEPTS)}] {concept_name:<20s} "
-                  f"n={len(present_indices) - n_skipped:>3d} skipped={n_skipped}", flush=True)
-
+    results = []  # (label, task_name, rho_result, sign_result)
+    for label, threshold_method, top_pct in CONFIGS:
+        print(f"\n=== {label} (method={threshold_method}, top_pct={top_pct}) ===", flush=True)
+        hybrid_scores_by_task = hybrid_scores_by_config[label]
         for task_name in TARGET_CLASSES:
             rho_result = score_method_agreement(records_by_task[task_name], hybrid_scores_by_task[task_name])
             sign_result = score_sign_agreement(records_by_task[task_name], hybrid_scores_by_task[task_name])

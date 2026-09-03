@@ -1,35 +1,25 @@
-"""Ablation of a THIRD localization-threshold family -- a per-concept
-z-score cutoff (mean + alpha*std, pooled across a concept's own present-set
-similarity maps) -- prompted directly, following up on the top_pct/Otsu
-ablation ("What if, alternatively we computed a threshold for each
-concept based on some statistics?" -> "I am inclined towards per concept
-statistics. Please add the ablation.").
+"""v95's own top_pct/Otsu threshold sweep, rerun on the official (non-HQ)
+CelebA val pool instead of CelebA-HQ's own val split -- prompted directly
+("Can we run ablations with the official validation data split minus the
+overlap?"), extending v98 (which only tested k=1.0 on this pool) to the
+full threshold family.
 
-Unlike top_pct (a fixed area budget regardless of how sharp the
-concept's real peak is) or Otsu (assumes the similarity map is
-genuinely bimodal, which notes/cub_correlation_investigation.md v69/v70
-already found is false here -- these maps are closer to a smooth
-gradient), a z-score cutoff adapts to each concept's own similarity
-SCALE without assuming a particular distribution shape, and without
-needing to renormalize the (deliberately non-unit-norm, see demean_query)
-query to make cutoffs comparable across concepts -- the per-concept
-pooling handles that automatically.
+Pool: the SAME 16,874-image "clean" official-val pool v98/v99 already
+built and cached (official CelebA val minus HQ-train leakage minus
+HQ-val overlap -- see build_clean_official_val_paths, imported directly
+rather than reimplemented). Ground truth: the ONLY one available --
+`results/celeba_full_faithfulness.csv`, real CelebA-HQ masks, aggregated
+per (concept,task) and therefore valid regardless of which images the
+method itself scores on (same reasoning as v98). Classifier: the
+ORIGINAL (not celeba_attractive_young_lowres) -- v99 found resolution-
+matched retraining doesn't change the official-val correlation, so
+there's no reason to introduce that as a second variable here; keeping
+the original classifier makes this directly comparable to v95's own
+HQ-val numbers, isolating the pool as the one changed thing.
 
-For each concept: localize ALL its K=50 present-set images FIRST (one
-pass, cached), pool every pixel from every map into one distribution,
-then derive that concept's own cutoff = mean + alpha*std for each alpha in
-ALPHA_VALUES -- a genuinely two-pass-per-concept design (the cutoff can't be
-computed from any single image being thresholded, only from the whole
-present set), unlike top_pct/Otsu which are single-image operations.
-Same 26-concept x 2-task re-score against the real masking-based
-faithfulness ground truth, same settings as the (also user-requested)
-orthogonalize=True rerun of ablate_cards_celeba_masking_hybrid_
-threshold.py (demean_query=True, orthogonalize=True -- v87/v91's own
-best-supported SigLIP config, K=50, SigLIP, 7-strategy fill family):
-queries are jointly Lowdin-orthogonalized once, up front, same as that
-sibling script.
-
-5 alpha values x 26 concepts x 50 images each.
+Otherwise identical to v95's own ablate_cards_celeba_masking_hybrid_
+threshold.py: demean_query=True, orthogonalize=True, K=50, SigLIP, the
+7-strategy fill family, same 8 configs (top_pct 2.5-30 + Otsu).
 """
 
 from __future__ import annotations
@@ -47,8 +37,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT, TASK_POSITIVE_LOGIT_INDEX
+from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
 
-from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
+from cards.attribution.localization import localize_concept, threshold_mask
 from cards.concepts.prompts import (
     GENERIC_REFERENCE_CONCEPTS,
     build_concept_query,
@@ -56,7 +47,6 @@ from cards.concepts.prompts import (
     demean_query,
 )
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS, TARGET_CLASSES
-from cards.data.datasets import load_celeba
 from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
@@ -68,14 +58,24 @@ from cards.validation.broden_faithfulness import (
     score_sign_agreement,
 )
 
-CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
+CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
 RESULTS_DIR = Path("results")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50
 SEED = 42
 FILL_STRATEGIES = ["blur", "zero_fill", "mean_fill", "hue_shift", "white_fill", "zero_fill_noise", "noise_then_blur"]
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
-ALPHA_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5]
+
+CONFIGS = [
+    ("top_pct_2.5", "top_pct", 2.5),
+    ("top_pct_5", "top_pct", 5),
+    ("top_pct_10", "top_pct", 10),
+    ("top_pct_15", "top_pct", 15),
+    ("top_pct_20", "top_pct", 20),
+    ("top_pct_25", "top_pct", 25),
+    ("top_pct_30", "top_pct", 30),
+    ("otsu", "otsu", None),
+]
 
 
 def load_records_by_task() -> dict[str, list[FaithfulnessResult]]:
@@ -105,30 +105,36 @@ def main():
     encoder = instantiate_encoder(cfg)
     text_center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
 
-    cfg.dataset = {"name": "celeba", "root": str(CELEBA_HQ_ROOT)}
+    official_paths = build_clean_official_val_paths()
+    cfg.dataset = {"name": "celeba_official_val_clean", "root": str(CELEBA_ROOT)}
     cfg.pool_source = "val"
-    pairs = load_celeba(CELEBA_HQ_ROOT, split="val")
+    pairs = [(p, 0) for p in official_paths]
     pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)
     print(f"pool: {len(pool.paths)} images", flush=True)
 
     spec = BACKBONES["celeba_attractive_young"]
     native_model = spec.load_native().to(DEVICE).eval()
 
-    # orthogonalize=True (v87/v91's SigLIP-best config) -- needs all 26
-    # queries built up front, jointly Lowdin-orthogonalized ONCE, reused
-    # unchanged across every alpha below (only the threshold varies).
     raw_queries = {
         c: demean_query(build_concept_query(CONCEPT_QUERY_TEXT[c], encoder), text_center)
         for c in GROUNDABLE_CONCEPTS
     }
     queries = orthogonalize_queries(raw_queries)
 
-    # hybrid_scores_by_alpha[alpha][task_name][(concept_idx, 1)] = raw_score
-    hybrid_scores_by_alpha: dict[float, dict[str, dict[tuple[int, int], float]]] = {
-        alpha: {t: {} for t in TARGET_CLASSES} for alpha in ALPHA_VALUES
+    # concept-outer / config-inner (NOT config-outer like an earlier
+    # version of this script and its v95 sibling) -- retrieval and
+    # localization depend only on (encoder, image, t_c), never on the
+    # threshold, so recomputing them once per config (8x total) was pure
+    # waste; caching them once per concept and reusing across all 8
+    # configs (mirrors the z-score script's own concept-outer/k-inner
+    # design) removes that redundant encoder forward pass without
+    # changing any score -- only the mask/fill/encode/classify step
+    # below genuinely differs per config and must still run once each.
+    hybrid_scores_by_config: dict[str, dict[str, dict[tuple[int, int], float]]] = {
+        label: {t: {} for t in TARGET_CLASSES} for label, _, _ in CONFIGS
     }
-    all_rows = []  # (alpha, concept_name, target_task, hybrid_raw_score)
-    cutoff_rows = []  # (alpha, concept_name, cutoff, mean_area_pct)
+    all_rows = []  # (label, concept_name, target_task, hybrid_raw_score)
+    skip_rows = []  # (label, concept_name, n_present, n_skipped_degenerate)
 
     for c_i, concept_name in enumerate(GROUNDABLE_CONCEPTS):
         t_c = queries[concept_name]
@@ -136,34 +142,23 @@ def main():
         concept_idx = CONCEPT_TO_IDX[concept_name]
 
         present_indices, _ = retrieve_top_bottom_k(pool, t_c, K)
-
-        # Pass 1: localize every present image ONCE, cache image + sim_map
-        # -- the per-concept cutoff needs the whole present set's pooled
-        # stats before any single image can be thresholded, and doing
-        # this once (not once per alpha) avoids ALPHA_VALUES redundant forward
-        # passes through the encoder for identical similarity maps.
         cached = []  # (idx, image, sim_map)
         for idx in present_indices:
             image = Image.open(pool.paths[idx]).convert("RGB")
             sim_map = localize_concept(encoder, image, t_c, (image.height, image.width))
             cached.append((idx, image, sim_map))
-        sim_maps = [sm for _, _, sm in cached]
 
         print(f"[{c_i + 1:>2d}/{len(GROUNDABLE_CONCEPTS)}] {concept_name:<20s}", flush=True)
 
-        # Pass 2: one cutoff per alpha, then mask/fill/score using the cached maps.
-        for alpha in ALPHA_VALUES:
-            cutoff = concept_zscore_cutoff(sim_maps, alpha)
-            areas = []
+        for label, threshold_method, top_pct in CONFIGS:
             delta_logits = {t: [] for t in TARGET_CLASSES}
             n_skipped = 0
 
             for idx, image, sim_map in cached:
-                mask = threshold_mask(sim_map, method="fixed", cutoff=cutoff)
+                mask = threshold_mask(sim_map, top_pct=top_pct or 15, method=threshold_method)
                 if not mask.any() or mask.all():
                     n_skipped += 1
                     continue
-                areas.append(float(mask.mean()))
 
                 rng = np.random.default_rng(SEED + concept_idx * 10_000 + int(idx))
                 candidates = [mask_region(image, mask, strategy=s, rng=rng) for s in FILL_STRATEGIES]
@@ -190,49 +185,46 @@ def main():
                     task_idx = TASK_POSITIVE_LOGIT_INDEX[task_name]
                     delta_logits[task_name].append((logits[0, task_idx] - logits[1, task_idx]).item())
 
-            mean_area_pct = 100.0 * float(np.mean(areas)) if areas else 0.0
-            cutoff_rows.append((alpha, concept_name, cutoff, mean_area_pct))
+            skip_rows.append((label, concept_name, len(present_indices), n_skipped))
             for task_name in TARGET_CLASSES:
                 score = float(np.mean(delta_logits[task_name])) if delta_logits[task_name] else 0.0
-                hybrid_scores_by_alpha[alpha][task_name][(concept_idx, 1)] = score
-                all_rows.append((alpha, concept_name, task_name, score))
+                hybrid_scores_by_config[label][task_name][(concept_idx, 1)] = score
+                all_rows.append((label, concept_name, task_name, score))
 
-            print(f"    alpha={alpha:<4.1f} cutoff={cutoff:+.4f} mean_area={mean_area_pct:>5.1f}% "
-                  f"n={len(present_indices) - n_skipped:>3d} skipped={n_skipped}", flush=True)
-
-    results = []  # (alpha, task_name, rho_result, sign_result)
-    for alpha in ALPHA_VALUES:
-        print(f"\n=== alpha={alpha} ===", flush=True)
+    results = []  # (label, task_name, rho_result, sign_result)
+    for label, threshold_method, top_pct in CONFIGS:
+        print(f"\n=== {label} (method={threshold_method}, top_pct={top_pct}) ===", flush=True)
+        hybrid_scores_by_task = hybrid_scores_by_config[label]
         for task_name in TARGET_CLASSES:
-            rho_result = score_method_agreement(records_by_task[task_name], hybrid_scores_by_alpha[alpha][task_name])
-            sign_result = score_sign_agreement(records_by_task[task_name], hybrid_scores_by_alpha[alpha][task_name])
-            results.append((alpha, task_name, rho_result, sign_result))
+            rho_result = score_method_agreement(records_by_task[task_name], hybrid_scores_by_task[task_name])
+            sign_result = score_sign_agreement(records_by_task[task_name], hybrid_scores_by_task[task_name])
+            results.append((label, task_name, rho_result, sign_result))
             if rho_result is not None:
                 print(f"  [{task_name}] n={rho_result.n_pairs} rho={rho_result.spearman_rho:+.4f} "
                       f"p={rho_result.spearman_p:.4g} | sign={sign_result.agreement_frac:.1%} "
                       f"({sign_result.n_agree}/{sign_result.n_pairs}) binom_p={sign_result.binom_p:.4g}", flush=True)
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_official_val_ablation.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["alpha", "target_task", "n_pairs", "spearman_rho", "spearman_p", "sign_agreement", "n_agree", "binom_p"])
-        for alpha, task_name, rho_result, sign_result in results:
+        writer.writerow(["config", "target_task", "n_pairs", "spearman_rho", "spearman_p", "sign_agreement", "n_agree", "binom_p"])
+        for label, task_name, rho_result, sign_result in results:
             if rho_result is None:
-                writer.writerow([alpha, task_name, "", "", "", "", "", ""])
+                writer.writerow([label, task_name, "", "", "", "", "", ""])
             else:
-                writer.writerow([alpha, task_name, rho_result.n_pairs, rho_result.spearman_rho, rho_result.spearman_p,
+                writer.writerow([label, task_name, rho_result.n_pairs, rho_result.spearman_rho, rho_result.spearman_p,
                                   sign_result.agreement_frac, sign_result.n_agree, sign_result.binom_p])
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation_raw_scores.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_official_val_ablation_raw_scores.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["alpha", "concept_name", "target_task", "hybrid_raw_score"])
+        writer.writerow(["config", "concept_name", "target_task", "hybrid_raw_score"])
         writer.writerows(all_rows)
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation_cutoffs.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_official_val_ablation_skip_counts.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["alpha", "concept_name", "cutoff", "mean_area_pct"])
-        writer.writerows(cutoff_rows)
+        writer.writerow(["config", "concept_name", "n_present", "n_skipped_degenerate"])
+        writer.writerows(skip_rows)
 
-    print(f"\nSaved {len(results)} (alpha, task) rows to results/cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation.csv")
+    print(f"\nSaved {len(results)} (config, task) rows to results/cards_celeba_masking_hybrid_threshold_official_val_ablation.csv")
 
 
 if __name__ == "__main__":

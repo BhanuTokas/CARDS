@@ -78,8 +78,8 @@ def otsu_threshold(values: np.ndarray, n_bins: int = 256) -> float:
     return float(bin_centers[idx])
 
 
-def concept_zscore_cutoff(sim_maps: list[np.ndarray], k: float) -> float:
-    """Pooled mean + k*std across multiple similarity maps -- typically
+def concept_zscore_cutoff(sim_maps: list[np.ndarray], alpha: float) -> float:
+    """Pooled mean + alpha*std across multiple similarity maps -- typically
     every present-set image for ONE concept, giving a per-concept-
     calibrated cutoff rather than top_pct's fixed area budget or Otsu's
     bimodal-split assumption (see threshold_mask's own docstring for why
@@ -92,12 +92,17 @@ def concept_zscore_cutoff(sim_maps: list[np.ndarray], k: float) -> float:
     non-unit-norm, so different concepts' raw dot-product magnitudes
     aren't directly comparable to begin with.
 
+    `alpha` (a std-multiplier, NOT the retrieval set size `cfg.k` used
+    throughout the rest of this codebase -- named `alpha` specifically to
+    avoid that collision, prompted directly: "Can we refer to 'k' for
+    standard deviation as alpha to avoid confusion?").
+
     Pools ALL pixels from ALL maps into one distribution before taking
     mean/std (not a mean-of-per-image-means), so images with sharper
     peaks contribute proportionally rather than being averaged away.
     """
     pooled = np.concatenate([m.flatten() for m in sim_maps])
-    return float(pooled.mean() + k * pooled.std())
+    return float(pooled.mean() + alpha * pooled.std())
 
 
 def threshold_mask(

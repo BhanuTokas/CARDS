@@ -1,35 +1,22 @@
-"""Ablation of a THIRD localization-threshold family -- a per-concept
-z-score cutoff (mean + alpha*std, pooled across a concept's own present-set
-similarity maps) -- prompted directly, following up on the top_pct/Otsu
-ablation ("What if, alternatively we computed a threshold for each
-concept based on some statistics?" -> "I am inclined towards per concept
-statistics. Please add the ablation.").
+"""v96's own per-concept z-score threshold sweep, rerun on the official
+(non-HQ) CelebA val pool instead of CelebA-HQ's own val split --
+prompted directly ("Can we run ablations with the official validation
+data split minus the overlap?"), extending v98 (which only tested
+alpha=1.0) to the full z-score family, mirroring
+ablate_cards_celeba_masking_hybrid_threshold_official_val.py's own pool
+swap of v95's top_pct sweep.
 
-Unlike top_pct (a fixed area budget regardless of how sharp the
-concept's real peak is) or Otsu (assumes the similarity map is
-genuinely bimodal, which notes/cub_correlation_investigation.md v69/v70
-already found is false here -- these maps are closer to a smooth
-gradient), a z-score cutoff adapts to each concept's own similarity
-SCALE without assuming a particular distribution shape, and without
-needing to renormalize the (deliberately non-unit-norm, see demean_query)
-query to make cutoffs comparable across concepts -- the per-concept
-pooling handles that automatically.
+Pool: the SAME 16,874-image "clean" official-val pool v98/v99 already
+built and cached. Ground truth: `results/celeba_full_faithfulness.csv`
+(the only one available -- see the sibling script's own docstring for
+why this is still valid). Classifier: the ORIGINAL (not
+celeba_attractive_young_lowres) -- v99 already ruled out resolution
+mismatch as the explanation, so no reason to introduce that as a second
+variable here.
 
-For each concept: localize ALL its K=50 present-set images FIRST (one
-pass, cached), pool every pixel from every map into one distribution,
-then derive that concept's own cutoff = mean + alpha*std for each alpha in
-ALPHA_VALUES -- a genuinely two-pass-per-concept design (the cutoff can't be
-computed from any single image being thresholded, only from the whole
-present set), unlike top_pct/Otsu which are single-image operations.
-Same 26-concept x 2-task re-score against the real masking-based
-faithfulness ground truth, same settings as the (also user-requested)
-orthogonalize=True rerun of ablate_cards_celeba_masking_hybrid_
-threshold.py (demean_query=True, orthogonalize=True -- v87/v91's own
-best-supported SigLIP config, K=50, SigLIP, 7-strategy fill family):
-queries are jointly Lowdin-orthogonalized once, up front, same as that
-sibling script.
-
-5 alpha values x 26 concepts x 50 images each.
+Otherwise identical to v96: demean_query=True, orthogonalize=True, K=50,
+SigLIP, the 7-strategy fill family, same 5 alpha values (0.5-2.5), same
+concept-outer/alpha-inner caching design.
 """
 
 from __future__ import annotations
@@ -47,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT, TASK_POSITIVE_LOGIT_INDEX
+from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
 
 from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
 from cards.concepts.prompts import (
@@ -56,7 +44,6 @@ from cards.concepts.prompts import (
     demean_query,
 )
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS, TARGET_CLASSES
-from cards.data.datasets import load_celeba
 from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
@@ -68,7 +55,7 @@ from cards.validation.broden_faithfulness import (
     score_sign_agreement,
 )
 
-CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
+CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
 RESULTS_DIR = Path("results")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50
@@ -105,25 +92,22 @@ def main():
     encoder = instantiate_encoder(cfg)
     text_center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
 
-    cfg.dataset = {"name": "celeba", "root": str(CELEBA_HQ_ROOT)}
+    official_paths = build_clean_official_val_paths()
+    cfg.dataset = {"name": "celeba_official_val_clean", "root": str(CELEBA_ROOT)}
     cfg.pool_source = "val"
-    pairs = load_celeba(CELEBA_HQ_ROOT, split="val")
+    pairs = [(p, 0) for p in official_paths]
     pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)
     print(f"pool: {len(pool.paths)} images", flush=True)
 
     spec = BACKBONES["celeba_attractive_young"]
     native_model = spec.load_native().to(DEVICE).eval()
 
-    # orthogonalize=True (v87/v91's SigLIP-best config) -- needs all 26
-    # queries built up front, jointly Lowdin-orthogonalized ONCE, reused
-    # unchanged across every alpha below (only the threshold varies).
     raw_queries = {
         c: demean_query(build_concept_query(CONCEPT_QUERY_TEXT[c], encoder), text_center)
         for c in GROUNDABLE_CONCEPTS
     }
     queries = orthogonalize_queries(raw_queries)
 
-    # hybrid_scores_by_alpha[alpha][task_name][(concept_idx, 1)] = raw_score
     hybrid_scores_by_alpha: dict[float, dict[str, dict[tuple[int, int], float]]] = {
         alpha: {t: {} for t in TARGET_CLASSES} for alpha in ALPHA_VALUES
     }
@@ -137,11 +121,6 @@ def main():
 
         present_indices, _ = retrieve_top_bottom_k(pool, t_c, K)
 
-        # Pass 1: localize every present image ONCE, cache image + sim_map
-        # -- the per-concept cutoff needs the whole present set's pooled
-        # stats before any single image can be thresholded, and doing
-        # this once (not once per alpha) avoids ALPHA_VALUES redundant forward
-        # passes through the encoder for identical similarity maps.
         cached = []  # (idx, image, sim_map)
         for idx in present_indices:
             image = Image.open(pool.paths[idx]).convert("RGB")
@@ -151,7 +130,6 @@ def main():
 
         print(f"[{c_i + 1:>2d}/{len(GROUNDABLE_CONCEPTS)}] {concept_name:<20s}", flush=True)
 
-        # Pass 2: one cutoff per alpha, then mask/fill/score using the cached maps.
         for alpha in ALPHA_VALUES:
             cutoff = concept_zscore_cutoff(sim_maps, alpha)
             areas = []
@@ -212,7 +190,7 @@ def main():
                       f"p={rho_result.spearman_p:.4g} | sign={sign_result.agreement_frac:.1%} "
                       f"({sign_result.n_agree}/{sign_result.n_pairs}) binom_p={sign_result.binom_p:.4g}", flush=True)
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_official_val_ablation.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["alpha", "target_task", "n_pairs", "spearman_rho", "spearman_p", "sign_agreement", "n_agree", "binom_p"])
         for alpha, task_name, rho_result, sign_result in results:
@@ -222,17 +200,17 @@ def main():
                 writer.writerow([alpha, task_name, rho_result.n_pairs, rho_result.spearman_rho, rho_result.spearman_p,
                                   sign_result.agreement_frac, sign_result.n_agree, sign_result.binom_p])
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation_raw_scores.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_official_val_ablation_raw_scores.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["alpha", "concept_name", "target_task", "hybrid_raw_score"])
         writer.writerows(all_rows)
 
-    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation_cutoffs.csv", "w", newline="") as f:
+    with open(RESULTS_DIR / "cards_celeba_masking_hybrid_threshold_zscore_official_val_ablation_cutoffs.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["alpha", "concept_name", "cutoff", "mean_area_pct"])
         writer.writerows(cutoff_rows)
 
-    print(f"\nSaved {len(results)} (alpha, task) rows to results/cards_celeba_masking_hybrid_threshold_zscore_orthogonalize_ablation.csv")
+    print(f"\nSaved {len(results)} (alpha, task) rows to results/cards_celeba_masking_hybrid_threshold_zscore_official_val_ablation.csv")
 
 
 if __name__ == "__main__":

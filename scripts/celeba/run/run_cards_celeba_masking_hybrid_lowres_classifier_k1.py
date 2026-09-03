@@ -62,7 +62,7 @@ RESULTS_DIR = Path("results")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50
 SEED = 42
-Z_K = 1.0
+ALPHA = 1.0
 FILL_STRATEGIES = ["blur", "zero_fill", "mean_fill", "hue_shift", "white_fill", "zero_fill_noise", "noise_then_blur"]
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
 
@@ -95,7 +95,7 @@ def score_pool(encoder, queries, pool, native_model, task_positive_logit_index) 
             image = Image.open(pool.paths[idx]).convert("RGB")
             sim_map = localize_concept(encoder, image, t_c, (image.height, image.width))
             cached.append((idx, image, sim_map))
-        cutoff = concept_zscore_cutoff([sm for _, _, sm in cached], Z_K)
+        cutoff = concept_zscore_cutoff([sm for _, _, sm in cached], ALPHA)
 
         delta_logits = {t: [] for t in TARGET_CLASSES}
         n_skipped = 0

@@ -117,7 +117,7 @@ def test_concept_zscore_cutoff_matches_hand_computed_pooled_stats():
     maps = [np.array([[0.0, 2.0], [4.0, 6.0]]), np.array([[8.0, 10.0], [12.0, 14.0]])]
     pooled = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0])
 
-    cutoff = concept_zscore_cutoff(maps, k=1.0)
+    cutoff = concept_zscore_cutoff(maps, alpha=1.0)
 
     assert cutoff == pytest.approx(pooled.mean() + pooled.std())
 
@@ -129,7 +129,7 @@ def test_concept_zscore_cutoff_pools_pixels_not_per_image_means():
     peaked = np.array([0.0, 0.0, 0.0, 100.0])
     flat = np.array([5.0, 5.0, 5.0, 5.0])
 
-    pooled_cutoff = concept_zscore_cutoff([peaked, flat], k=1.0)
+    pooled_cutoff = concept_zscore_cutoff([peaked, flat], alpha=1.0)
     combined = np.concatenate([peaked, flat])
 
     assert pooled_cutoff == pytest.approx(combined.mean() + combined.std())
