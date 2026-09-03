@@ -8,16 +8,24 @@ a model becomes more shortcut-reliant?
 No ground-truth comparison here (no celeba_full_faithfulness.csv) --
 this experiment isn't measuring correlation with real per-pixel masks,
 it's comparing the method's own attribution OUTPUT across 4 differently-
-trained models. Retrieval/scoring runs against the SAME, always-CLEAN
-CelebA-HQ val pool every other config in this track uses -- raw images
-loaded straight from disk never pass through the shortcut-injecting
-Dataset class, so this deliberately tests whether the method still
-finds real concepts meaningful on natural (shortcut-free) images, not
-just whether masking a concept region happens to also touch the
-(spatially unrelated, untouched-by-masking) shortcut block.
+trained models. Retrieval/scoring runs against the official (non-HQ)
+CelebA val pool -- the standing default for CelebA attribution/eval
+scripts going forward ("Can you please default to that for all future
+experiments unless explicitly told otherwise"), NOT CelebA-HQ's own val
+split. Raw images loaded straight from disk never pass through the
+shortcut-injecting Dataset class either way, so this deliberately tests
+whether the method still finds real concepts meaningful on natural
+(shortcut-free) images, not just whether masking a concept region
+happens to also touch the (spatially unrelated, untouched-by-masking)
+shortcut block.
 
 Config: SigLIP, demean=True, orthogonalize=True, z-score alpha=1.0, K=50
--- the current best-validated HQ-val config (v96). Scores the full
+-- the current best-validated config (v96, HQ-val-tuned). This
+experiment tests a different axis (the method's sensitivity to a
+model's actual shortcut-reliance, not correlation-with-ground-truth
+optimality), so the exact threshold config matters less here than in
+the tuning ablations -- kept at the same validated default rather than
+re-optimized for this specific evaluation pool. Scores the full
 26-concept GROUNDABLE_CONCEPTS bank for each of the 4 checkpoints.
 
 Reports three views: (1) each model's own top-5 concepts by raw_score,
@@ -45,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT
+from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
 
 from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
 from cards.concepts.prompts import (
@@ -54,13 +63,12 @@ from cards.concepts.prompts import (
     demean_query,
 )
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
-from cards.data.datasets import load_celeba
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
 from cards.validation.broden_faithfulness import mask_region
 
-CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
+CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
 RESULTS_DIR = Path("results")
 CKPT_DIR = Path("trained_models_new/celeba")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -112,11 +120,12 @@ def main():
     encoder = instantiate_encoder(cfg)
     text_center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
 
-    cfg.dataset = {"name": "celeba", "root": str(CELEBA_HQ_ROOT)}
+    official_paths = build_clean_official_val_paths()
+    cfg.dataset = {"name": "celeba_official_val_clean", "root": str(CELEBA_ROOT)}
     cfg.pool_source = "val"
-    pairs = load_celeba(CELEBA_HQ_ROOT, split="val")
+    pairs = [(p, 0) for p in official_paths]  # label unused by retrieval/scoring, placeholder only
     pool = load_or_build_pool(Path(cfg.cache_dir), cache_key_for(cfg), pairs, encoder)
-    print(f"pool: {len(pool.paths)} images (always clean -- shortcut injection never touches this pool)", flush=True)
+    print(f"pool: {len(pool.paths)} images (official CelebA val, always clean -- shortcut injection never touches this pool)", flush=True)
 
     raw_queries = {
         c: demean_query(build_concept_query(CONCEPT_QUERY_TEXT[c], encoder), text_center)
