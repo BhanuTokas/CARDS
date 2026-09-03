@@ -28,17 +28,25 @@ TASK_POSITIVE_LOGIT_INDEX: dict[str, int] = {"Attractive": 1, "Young": 3}
 
 
 class CelebaAttractiveYoungBlackBox:
-    """Wraps the celeba_attractive_young checkpoint as `b(x) -> scalar`,
-    resolving its 2-task 4-way-logit head to one task's own positive-class
-    logit -- the BlackBoxModel contract."""
+    """Wraps a celeba_attractive_young-shaped checkpoint as `b(x) ->
+    scalar`, resolving its 2-task 4-way-logit head to one task's own
+    positive-class logit -- the BlackBoxModel contract.
 
-    def __init__(self, task_name: str, device: str = "cuda"):
+    `backbone_name` selects which BACKBONES entry to load -- defaults to
+    the original HQ-resolution-trained checkpoint; pass
+    "celeba_attractive_young_lowres" for the low-resolution-trained
+    variant (notes/celeba_correlation_investigation.md's resolution-
+    mismatch follow-up). Both share this same 2-task 4-way head shape,
+    so no other change is needed here.
+    """
+
+    def __init__(self, task_name: str, device: str = "cuda", backbone_name: str = "celeba_attractive_young"):
         if task_name not in TASK_POSITIVE_LOGIT_INDEX:
             raise ValueError(
                 f"task_name {task_name!r} not in {sorted(TASK_POSITIVE_LOGIT_INDEX)} "
                 f"(cards.data.celeba_attributes.TARGET_CLASSES={TARGET_CLASSES})"
             )
-        spec = BACKBONES["celeba_attractive_young"]
+        spec = BACKBONES[backbone_name]
         self.device = device
         self.model = spec.load_native().to(device).eval()
         self._preprocess = spec.preprocess
