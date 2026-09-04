@@ -138,10 +138,7 @@ def build_image_grid(rows: list[tuple[str, list[tuple[Path, float]]]], out_path:
     pad, label_w, header_h = 4, 90, 20
     grid = Image.new("RGB", (label_w + n_cols * (thumb + pad), header_h + n_rows * (thumb + pad + header_h)), "white")
     draw = ImageDraw.Draw(grid)
-    try:
-        font = ImageFont.load_default()
-    except Exception:
-        font = None
+    font = ImageFont.load_default()
 
     for r, (row_label, images) in enumerate(rows):
         y0 = header_h + r * (thumb + pad + header_h)
@@ -150,7 +147,7 @@ def build_image_grid(rows: list[tuple[str, list[tuple[Path, float]]]], out_path:
             x0 = label_w + c * (thumb + pad)
             try:
                 thumb_img = Image.open(img_path).convert("RGB").resize((thumb, thumb))
-            except Exception:
+            except OSError:
                 thumb_img = Image.new("RGB", (thumb, thumb), "gray")
             grid.paste(thumb_img, (x0, y0 + header_h))
             draw.text((x0, y0 + header_h + thumb - 12), f"{score:+.2f}", fill="yellow", font=font)
