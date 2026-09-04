@@ -113,7 +113,10 @@ def main():
     # from the OTHER 25 groundable concepts' own just-materialized
     # positive crops (real crops of real, different facial regions).
     for concept_name in GROUNDABLE_CONCEPTS:
-        other_concepts = [c for c in GROUNDABLE_CONCEPTS if c != concept_name]
+        own_regions = set(ATTRIBUTE_TO_REGIONS[concept_name])
+        other_concepts = [
+            c for c in GROUNDABLE_CONCEPTS if set(ATTRIBUTE_TO_REGIONS[c]) != own_regions
+        ]
         pool: list[Path] = []
         for other in other_concepts:
             pool.extend(positive_crops[other])
