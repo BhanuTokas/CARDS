@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 
+from cards.attribution.masking_mode import MaskingScoreResult
 from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS
 from cards.directions.estimate import ConceptDirection
 from cards.pipeline import (
@@ -30,6 +31,8 @@ from cards.pipeline import (
     resolve_demean_reference_concepts,
     retrieve_concept_sets,
     save_directions,
+    save_masking_hybrid_scores,
+    score_masking_hybrid_concepts,
 )
 from cards.retrieval.pool import CandidatePool
 
@@ -153,6 +156,23 @@ def test_process_concept_returns_direction_and_indices():
     assert isinstance(result, ConceptResult)
     assert result.direction.concept == "dog"
     assert len(result.present_indices) == len(result.absent_indices) == 3
+
+
+def test_process_concept_query_equals_the_t_c_used_for_retrieval():
+    # cfg.scoring_mode == "masking_hybrid" needs the EXACT t_c retrieval
+    # used, not result.direction.unit_vector (a different, empirically-
+    # estimated vector) -- confirms ConceptResult.query is that same t_c,
+    # not silently something else (e.g. the direction).
+    from cards.concepts.prompts import build_concept_query
+
+    pool = _make_pool(10)
+    cfg = OmegaConf.create({"retrieval": {"strategy": "naive"}, "k": 3})
+    encoder = _LookupTextEncoder(dim=8)
+
+    result = process_concept(cfg, encoder, pool, "dog")
+
+    assert torch.equal(result.query, build_concept_query("dog", encoder))
+    assert not torch.equal(result.query, result.direction.unit_vector)
 
 
 def test_process_concept_text_center_changes_retrieval():
@@ -448,6 +468,31 @@ def test_save_directions_round_trips(tmp_path):
     assert torch.allclose(loaded["dog"]["unit_vector"], torch.tensor([1.0, 0.0]))
 
 
+# ---- save_masking_hybrid_scores ----
+
+
+def test_save_masking_hybrid_scores_round_trips(tmp_path):
+    scores = {
+        "dog": MaskingScoreResult(
+            raw_score=1.5,
+            delta_scores=[1.0, 2.0],
+            selected_strategies=["blur", "zero_fill"],
+            angles_degrees=[10.0, 20.0],
+            n_skipped_degenerate=1,
+        )
+    }
+    path = tmp_path / "out" / "masking_hybrid_scores.pt"
+
+    save_masking_hybrid_scores(scores, path)
+
+    loaded = torch.load(path, weights_only=False)
+    assert loaded["dog"]["raw_score"] == pytest.approx(1.5)
+    assert loaded["dog"]["delta_scores"] == [1.0, 2.0]
+    assert loaded["dog"]["selected_strategies"] == ["blur", "zero_fill"]
+    assert loaded["dog"]["angles_degrees"] == [10.0, 20.0]
+    assert loaded["dog"]["n_skipped_degenerate"] == 1
+
+
 # ---- instantiate_encoder ----
 
 
@@ -511,3 +556,82 @@ def test_instantiate_model_strips_name_before_instantiating():
 
     assert isinstance(black_box, _FakeBlackBoxModel)
     assert black_box.checkpoint_path == "some/path.ckpt"
+
+
+# ---- score_masking_hybrid_concepts ----
+
+
+def test_score_masking_hybrid_concepts_uses_query_not_direction(monkeypatch):
+    # The whole reason ConceptResult grew a `query` field: masking_score
+    # must be called with the EXACT t_c used for retrieval, not
+    # result.direction.unit_vector (a different, empirically-estimated
+    # vector) -- a real correctness bug this guards against.
+    calls = []
+
+    def fake_masking_score(black_box, encoder, pool, present_indices, query, **kwargs):
+        calls.append({"present_indices": present_indices, "query": query, **kwargs})
+        from cards.attribution.masking_mode import MaskingScoreResult
+
+        return MaskingScoreResult(raw_score=1.0)
+
+    monkeypatch.setattr("cards.pipeline.masking_score", fake_masking_score)
+
+    query = torch.tensor([9.0, 9.0])
+    direction = ConceptDirection(concept="dog", unit_vector=torch.tensor([1.0, 0.0]), magnitude=1.0)
+    result = ConceptResult(direction=direction, present_indices=[0, 1], absent_indices=[2, 3], query=query)
+    cfg = OmegaConf.create({"seed": 5, "masking_hybrid": {"top_pct": 20}})
+
+    scores = score_masking_hybrid_concepts(cfg, encoder=None, black_box=None, pool=None,
+                                            concepts=["dog"], results=[result])
+
+    assert torch.equal(calls[0]["query"], query)
+    assert calls[0]["present_indices"] == [0, 1]
+    assert calls[0]["top_pct"] == 20
+    assert calls[0]["seed"] == 5
+    assert calls[0]["concept_idx"] == 0
+    assert scores["dog"].raw_score == 1.0
+
+
+def test_score_masking_hybrid_concepts_never_touches_absent_indices(monkeypatch):
+    seen_present_only = []
+
+    def fake_masking_score(black_box, encoder, pool, present_indices, query, **kwargs):
+        seen_present_only.append(present_indices)
+        from cards.attribution.masking_mode import MaskingScoreResult
+
+        return MaskingScoreResult(raw_score=0.0)
+
+    monkeypatch.setattr("cards.pipeline.masking_score", fake_masking_score)
+
+    direction = ConceptDirection(concept="dog", unit_vector=torch.tensor([1.0, 0.0]), magnitude=1.0)
+    result = ConceptResult(
+        direction=direction, present_indices=[0, 1], absent_indices=[99, 98, 97], query=torch.tensor([1.0]),
+    )
+    cfg = OmegaConf.create({"seed": 0})
+
+    score_masking_hybrid_concepts(cfg, encoder=None, black_box=None, pool=None, concepts=["dog"], results=[result])
+
+    # absent_indices=[99, 98, 97] never shows up anywhere masking_score was called with
+    assert seen_present_only == [[0, 1]]
+
+
+def test_score_masking_hybrid_concepts_uses_config_defaults_when_unset(monkeypatch):
+    from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES, MaskingScoreResult
+
+    captured = {}
+
+    def fake_masking_score(black_box, encoder, pool, present_indices, query, **kwargs):
+        captured.update(kwargs)
+        return MaskingScoreResult(raw_score=0.0)
+
+    monkeypatch.setattr("cards.pipeline.masking_score", fake_masking_score)
+
+    direction = ConceptDirection(concept="dog", unit_vector=torch.tensor([1.0]), magnitude=1.0)
+    result = ConceptResult(direction=direction, present_indices=[0], absent_indices=[], query=torch.tensor([1.0]))
+    cfg = OmegaConf.create({"seed": 0})  # no masking_hybrid block at all
+
+    score_masking_hybrid_concepts(cfg, encoder=None, black_box=None, pool=None, concepts=["dog"], results=[result])
+
+    assert captured["top_pct"] == 15
+    assert captured["fill_strategies"] == DEFAULT_FILL_STRATEGIES
+    assert captured["threshold_method"] == "top_pct"

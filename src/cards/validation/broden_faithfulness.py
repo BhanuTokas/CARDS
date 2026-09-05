@@ -98,6 +98,18 @@ def mask_region(
       region's own real (dark, if imperfectly so) pixel values are
       closest in RGB space to zero_fill's own fill color, maximizing
       contrast instead.
+    - "noise_then_blur": the same Gaussian noise draw as
+      "zero_fill_noise" (needs the same `rng`), then Gaussian-blurred
+      (same `blur_sigma` as "blur") -- targets a gap neither "blur" nor
+      "zero_fill_noise" close on its own. Plain "blur" leaks the
+      region's own real low-frequency content (CUB v61: 75-90% of the
+      original mean color survives); "zero_fill_noise" erases content
+      completely but is sharp, high-frequency texture unlike anything a
+      real photographic region looks like. Blurring random noise erases
+      the original content just as completely while leaving a smooth,
+      photographically-plausible-looking patch instead of visible static
+      -- content-free without the flatness/sharpness confounds either
+      single strategy carries alone.
     """
     if mask.shape != (image.height, image.width):
         raise ValueError(f"mask shape {mask.shape} doesn't match image size {(image.height, image.width)}")
@@ -115,6 +127,12 @@ def mask_region(
             raise ValueError("strategy='zero_fill_noise' requires an rng (np.random.Generator) for the noise draw")
         noise = rng.normal(loc=0.0, scale=noise_std, size=(image.height, image.width, 3))
         filled = Image.fromarray(np.clip(noise, 0, 255).astype(np.uint8), mode="RGB")
+    elif strategy == "noise_then_blur":
+        if rng is None:
+            raise ValueError("strategy='noise_then_blur' requires an rng (np.random.Generator) for the noise draw")
+        noise = rng.normal(loc=0.0, scale=noise_std, size=(image.height, image.width, 3))
+        noise_img = Image.fromarray(np.clip(noise, 0, 255).astype(np.uint8), mode="RGB")
+        filled = noise_img.filter(ImageFilter.GaussianBlur(radius=blur_sigma))
     elif strategy == "hue_shift":
         h, s, v = image.convert("HSV").split()
         shift = round(hue_shift_degrees / 360.0 * 256.0)

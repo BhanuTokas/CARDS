@@ -24,7 +24,11 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.data.cub_parts import CUB70_TO_CUB_PART_ID, load_cub70_mask, load_images_txt  # noqa: E402
+from cards.data.cub_parts import (
+    CUB70_TO_CUB_PART_ID,
+    load_cub70_mask,
+    load_images_txt,
+)
 
 CUB_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB_200_2011")
 CUB70_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CUB70_part_segmentation")

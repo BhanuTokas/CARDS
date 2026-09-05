@@ -65,6 +65,33 @@ demean_query: true
 # estimate, e.g. demean_reference_concepts='[concept1,concept2,...]'.
 demean_reference_concepts: null
 
+# Step 6 scoring mechanism. "retrieval" (default): CARDS' original
+# cross-image contrast, mean(b(P_c)) - mean(b(N_c)) over two DIFFERENT
+# retrieved sets (cards.attribution.global_mode.global_score).
+# "masking_hybrid": a same-image counterfactual instead -- for each
+# PRESENT image, localize the concept in that SAME image via the
+# encoder's own patch-token similarity to the query (no manual masks, no
+# external segmenter), mask it out, and score b(original) - b(masked) on
+# that one image (cards.attribution.masking_mode.masking_score). Needs
+# an encoder satisfying cards.encoders.base.PatchLocalizableEncoder
+# (OpenClipEncoder, PerceptionEncoder both do); never touches an absent
+# set. Validated at full scale on CelebA (notes/celeba_correlation_
+# investigation.md v78-v93 -- the only method there with a significant,
+# cross-encoder-replicated result) and CUB (notes/cub_correlation_
+# investigation.md v67-v72, later dropped there over ground-truth
+# precision concerns unrelated to the mechanism itself).
+scoring_mode: retrieval
+
+# Only read when scoring_mode == "masking_hybrid". top_pct/fill_strategies
+# match the values validated throughout the investigation above; see
+# cards.attribution.localization.threshold_mask and
+# cards.attribution.masking_mode.DEFAULT_FILL_STRATEGIES for what each
+# does. Step 7 normalization is not applied to this mode's raw_score.
+masking_hybrid:
+  top_pct: 15
+  fill_strategies: [blur, zero_fill, mean_fill, hue_shift, white_fill, zero_fill_noise, noise_then_blur]
+  threshold_method: top_pct  # or "otsu" -- see threshold_mask's own docstring for why top_pct is the default
+
 output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 hydra:

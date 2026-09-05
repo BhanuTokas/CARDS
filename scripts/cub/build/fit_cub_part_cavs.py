@@ -21,14 +21,15 @@ import sys
 from pathlib import Path
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from cards.models.backbones import BACKBONES  # noqa: E402
-from concepts.concept_utils import ListDataset, learn_concept_bank  # noqa: E402
-from torch.utils.data import DataLoader  # noqa: E402
+from concepts.concept_utils import ListDataset, learn_concept_bank
+from torch.utils.data import DataLoader
+
+from cards.models.backbones import BACKBONES
 
 CONCEPT_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\cub_part_concepts")
 OUT_DIR = Path("trained_concepts_new/cub_parts/resnet18_cub")

@@ -111,6 +111,40 @@ def test_mask_region_zero_fill_noise_reproducible_with_same_rng_state():
     assert np.array_equal(np.array(result_a), np.array(result_b))
 
 
+def test_mask_region_noise_then_blur_requires_rng():
+    image = Image.new("RGB", (10, 10), color=(20, 15, 10))
+    mask = np.ones((10, 10), dtype=bool)
+
+    with pytest.raises(ValueError):
+        mask_region(image, mask, strategy="noise_then_blur")
+
+
+def test_mask_region_noise_then_blur_erases_original_content_but_is_smooth():
+    image = Image.new("RGB", (64, 64), color=(200, 50, 50))
+    mask = np.ones((64, 64), dtype=bool)
+    rng = np.random.default_rng(0)
+
+    result = np.array(mask_region(image, mask, strategy="noise_then_blur", rng=rng)).astype(np.float64)
+
+    # original color (200, 50, 50) should NOT survive -- unlike plain
+    # blur, which preserves most of a region's own mean color.
+    assert abs(result[..., 0].mean() - 200) > 20
+    # blurring the noise should smooth it far below raw zero_fill_noise's
+    # own per-pixel std (~20, matching noise_std) -- neighboring pixels
+    # should correlate, not look like flat static.
+    assert result.std() < 15.0
+
+
+def test_mask_region_noise_then_blur_reproducible_with_same_rng_state():
+    image = Image.new("RGB", (10, 10), color=(200, 50, 50))
+    mask = np.ones((10, 10), dtype=bool)
+
+    result_a = mask_region(image, mask, strategy="noise_then_blur", rng=np.random.default_rng(7))
+    result_b = mask_region(image, mask, strategy="noise_then_blur", rng=np.random.default_rng(7))
+
+    assert np.array_equal(np.array(result_a), np.array(result_b))
+
+
 def test_mask_region_hue_shift_changes_only_masked_pixels():
     image = Image.new("RGB", (10, 10), color=(200, 50, 50))
     mask = np.zeros((10, 10), dtype=bool)

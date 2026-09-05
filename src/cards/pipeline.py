@@ -20,6 +20,11 @@ from omegaconf import DictConfig
 from PIL import Image
 
 from cards.attribution.global_mode import global_score
+from cards.attribution.masking_mode import (
+    DEFAULT_FILL_STRATEGIES,
+    MaskingScoreResult,
+    masking_score,
+)
 from cards.attribution.normalization import (
     angular_distance,
     embedding_distance_normalize,
@@ -34,7 +39,7 @@ from cards.concepts.prompts import (
 from cards.data.datasets import load_celeba, load_cifar, load_cub, load_metadataset
 from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
-from cards.encoders.base import ImageTextEncoder
+from cards.encoders.base import ImageTextEncoder, PatchLocalizableEncoder
 from cards.retrieval.aligned import aligned_retrieval
 from cards.retrieval.confound import matched_retrieval, stratified_retrieval
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
@@ -51,6 +56,16 @@ class ConceptResult:
     direction: ConceptDirection
     present_indices: list[int]
     absent_indices: list[int]
+    query: torch.Tensor | None = None
+    """The exact t_c used for retrieval (post-demean, post-orthogonalize
+    if enabled) -- distinct from direction.unit_vector, which is Step 4's
+    own EMPIRICAL present/absent diff-of-means direction, a related but
+    different vector. cfg.scoring_mode == "masking_hybrid" needs this
+    exact query (masking_mode.masking_score's own localization and best-
+    of-N fill-strategy selection were validated against t_c specifically,
+    see notes/celeba_correlation_investigation.md v78 onward), not the
+    estimated direction. Defaults to None so existing call sites that
+    construct ConceptResult directly (tests, save_directions) don't break."""
 
 
 def load_dataset_pool(cfg: DictConfig) -> list[tuple[Path, int]]:
@@ -209,7 +224,9 @@ def process_concept(
     direction = estimate_direction(
         concept, pool.embeddings[present_indices], pool.embeddings[absent_indices]
     )
-    return ConceptResult(direction=direction, present_indices=present_indices, absent_indices=absent_indices)
+    return ConceptResult(
+        direction=direction, present_indices=present_indices, absent_indices=absent_indices, query=t_c
+    )
 
 
 def compute_delta_c(cfg: DictConfig, pool: CandidatePool, result: ConceptResult) -> float:
@@ -240,6 +257,45 @@ def normalize_score(
     if method == "embedding_distance":
         return embedding_distance_normalize(raw_score, delta_c)
     raise ValueError(f"unknown normalization method {method!r}")
+
+
+def score_masking_hybrid_concepts(
+    cfg: DictConfig,
+    encoder: PatchLocalizableEncoder,
+    black_box,
+    pool: CandidatePool,
+    concepts: list[str],
+    results: list[ConceptResult],
+) -> dict[str, MaskingScoreResult]:
+    """Steps 6-7 for cfg.scoring_mode == "masking_hybrid" -- scores every
+    concept via cards.attribution.masking_mode.masking_score using each
+    result's own `query` (the exact t_c used for retrieval, NOT
+    `result.direction.unit_vector` -- see ConceptResult.query's own
+    docstring for why those differ) and `present_indices` only, ignoring
+    `absent_indices` entirely. Split out of `run()` so it's unit-testable
+    with fakes the same way process_concept/normalize_score are, rather
+    than only through the full Hydra-wired `run()`.
+    """
+    hybrid_cfg = cfg.get("masking_hybrid", {})
+    top_pct = hybrid_cfg.get("top_pct", 15)
+    fill_strategies = list(hybrid_cfg.get("fill_strategies", DEFAULT_FILL_STRATEGIES))
+    threshold_method = hybrid_cfg.get("threshold_method", "top_pct")
+
+    scores: dict[str, MaskingScoreResult] = {}
+    for concept_idx, (concept, result) in enumerate(zip(concepts, results)):
+        hybrid_result = masking_score(
+            black_box, encoder, pool, result.present_indices, result.query,
+            top_pct=top_pct, fill_strategies=fill_strategies, threshold_method=threshold_method,
+            seed=cfg.seed, concept_idx=concept_idx,
+        )
+        scores[concept] = hybrid_result
+        log.info(
+            "concept=%s raw_score=%.4f (masking_hybrid, %d/%d images scored, "
+            "%d skipped as degenerate; normalization not applicable to this mode)",
+            concept, hybrid_result.raw_score, len(hybrid_result.delta_scores),
+            len(result.present_indices), hybrid_result.n_skipped_degenerate,
+        )
+    return scores
 
 
 def instantiate_encoder(cfg: DictConfig) -> ImageTextEncoder:
@@ -286,6 +342,28 @@ def save_directions(results: list[ConceptResult], path: Path) -> None:
                 "magnitude": result.direction.magnitude,
             }
             for result in results
+        },
+        path,
+    )
+
+
+def save_masking_hybrid_scores(scores: dict[str, MaskingScoreResult], path: Path) -> None:
+    """Persists cfg.scoring_mode == "masking_hybrid"'s per-concept results
+    (raw_score plus the underlying per-image delta_scores/selected_
+    strategies/angles_degrees/n_skipped_degenerate) alongside directions.pt
+    -- mirrors save_directions' own shape/convention, so this mode's
+    results survive past the log line rather than needing scraping."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            concept: {
+                "raw_score": result.raw_score,
+                "delta_scores": result.delta_scores,
+                "selected_strategies": result.selected_strategies,
+                "angles_degrees": result.angles_degrees,
+                "n_skipped_degenerate": result.n_skipped_degenerate,
+            }
+            for concept, result in scores.items()
         },
         path,
     )
@@ -351,6 +429,24 @@ def run(cfg: DictConfig) -> list[ConceptResult]:
     black_box = instantiate_model(cfg)
     if black_box is None:
         log.info("model=none -- skipping Steps 6-7 (attribution scoring); directions saved to %s", output_dir)
+        return results
+
+    scoring_mode = cfg.get("scoring_mode", "retrieval")
+    if scoring_mode == "masking_hybrid":
+        # Same-image counterfactual scoring (cards.attribution.masking_
+        # mode) -- only ever touches present_indices/result.query, never
+        # absent_indices. Steps 1-5 above still computed an absent set
+        # and saved a direction either way: that's Step-4 output,
+        # independent of which Step-6 scoring mode runs, and costs
+        # nothing extra (Steps 1-4 only touch pool.embeddings, no
+        # black-box calls happen until here). Step 7 normalization is
+        # skipped for this mode -- see masking_mode's own module
+        # docstring / notes/celeba_correlation_investigation.md's design
+        # discussion for why global_score's two existing formulas don't
+        # cleanly transfer to a same-image paired-delta score.
+        hybrid_scores = score_masking_hybrid_concepts(cfg, encoder, black_box, pool, concepts, results)
+        save_masking_hybrid_scores(hybrid_scores, output_dir / "masking_hybrid_scores.pt")
+        log.info("masking_hybrid scores (raw_score + per-image detail) saved to %s", output_dir / "masking_hybrid_scores.pt")
         return results
 
     for concept, result in zip(concepts, results):
