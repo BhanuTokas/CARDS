@@ -45,9 +45,13 @@ captum's directional derivative is tied to one target index per call.
 
 Outputs: `results/local_attribution_celeba_pairs.csv` (every scored row:
 image, concept, task, ground-truth delta_p, all 3 local scores),
-per-task rho/sign for all 3 methods, and `results/local_attribution_
-top10/<concept>.png` -- one 3-row (baseline/hybrid/tcav) x 10-col image
-grid per concept, its own top-10-by-score images per method.
+per-task rho/sign for all 3 methods (baseline included), and
+`results/local_attribution_top10/<concept>.png` -- one 3-row
+(ground_truth/hybrid/tcav -- ground_truth shown instead of baseline,
+more informative since it checks each method against real masking
+ground truth directly rather than just method-vs-method) x 10-col image
+grid per concept, ranked by |score| (not raw value, so both directions
+surface), sign shown via score-text color (green=positive, red=negative).
 """
 
 from __future__ import annotations
@@ -131,8 +135,12 @@ def make_tcav_concept(concept_id: int, name: str, image_paths: list, preprocess,
 
 def build_image_grid(rows: list[tuple[str, list[tuple[Path, float]]]], out_path: Path, thumb=128) -> None:
     """rows: [(row_label, [(image_path, score), ...]), ...] -- one row per
-    method, up to 10 columns. Renders a simple labeled grid, no external
-    plotting deps beyond PIL (already used throughout this track)."""
+    method, up to 10 columns, ranked by |score| by the caller. Renders a
+    simple labeled grid, no external plotting deps beyond PIL (already
+    used throughout this track). Sign shown directly via score-text
+    color (green=positive, red=negative) -- load-bearing once ranking is
+    by magnitude rather than raw value, since that mixes both signs into
+    one row."""
     n_cols = max(len(images) for _, images in rows)
     n_rows = len(rows)
     pad, label_w, header_h = 4, 90, 20
@@ -150,7 +158,8 @@ def build_image_grid(rows: list[tuple[str, list[tuple[Path, float]]]], out_path:
             except OSError:
                 thumb_img = Image.new("RGB", (thumb, thumb), "gray")
             grid.paste(thumb_img, (x0, y0 + header_h))
-            draw.text((x0, y0 + header_h + thumb - 12), f"{score:+.2f}", fill="yellow", font=font)
+            sign_color = "lime" if score >= 0 else "red"
+            draw.text((x0, y0 + header_h + thumb - 12), f"{score:+.2f}", fill=sign_color, font=font)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     grid.save(out_path)
 
@@ -254,7 +263,7 @@ def main():
     print(f"\n=== scoring {len(pairs)} (image, concept) pairs ===", flush=True)
     all_out_rows = []  # (image, concept_name, target_task, gt_delta_p, baseline_score, hybrid_score, tcav_score)
     top10_candidates: dict[str, dict[str, list[tuple[str, float]]]] = {
-        c: {"baseline": [], "hybrid": [], "tcav": []} for c in GROUNDABLE_CONCEPTS
+        c: {"ground_truth": [], "baseline": [], "hybrid": [], "tcav": []} for c in GROUNDABLE_CONCEPTS
     }
 
     for pair_i, ((image_path, concept_name), tasks) in enumerate(pairs.items()):
@@ -315,6 +324,7 @@ def main():
         for task_name, gt_delta_p in tasks.items():
             all_out_rows.append((image_path, concept_name, task_name, gt_delta_p,
                                   baseline_by_task[task_name], hybrid_by_task[task_name], tcav_by_task[task_name]))
+            top10_candidates[concept_name]["ground_truth"].append((image_path, gt_delta_p))
             top10_candidates[concept_name]["baseline"].append((image_path, baseline_by_task[task_name]))
             top10_candidates[concept_name]["hybrid"].append((image_path, hybrid_by_task[task_name]))
             top10_candidates[concept_name]["tcav"].append((image_path, tcav_by_task[task_name]))
@@ -339,11 +349,22 @@ def main():
             print(f"  [{task_name}] {method_name:<10s} n={len(task_rows)} rho={rho:+.4f} p={p:.4g}", flush=True)
 
     # --- top-10 visualizations ---
-    print("\n=== building top-10 grids per concept ===", flush=True)
+    # ground_truth (real gt_delta_p) shown instead of baseline -- more
+    # informative than method-vs-method, since it checks each method
+    # against real masking ground truth directly (prompted directly,
+    # "could you replace the baseline with ground truth masking
+    # results?" -- folded into this script's own default output after
+    # initially only living in a separate, easily-forgotten rebuild
+    # script; "Can you also correct the existing code to make sure you
+    # don't repeat the errors again in the future?"). Ranked by
+    # |magnitude| with sign shown via score-text color (green=positive,
+    # red=negative) -- also folded in from what was originally a
+    # separate corrected-ground-truth-only script.
+    print("\n=== building top-10-by-|magnitude| grids per concept (ground_truth/hybrid/tcav, sign shown) ===", flush=True)
     for concept_name in GROUNDABLE_CONCEPTS:
         rows_for_grid = []
-        for method_name in ["baseline", "hybrid", "tcav"]:
-            ranked = sorted(top10_candidates[concept_name][method_name], key=lambda kv: -kv[1])[:10]
+        for method_name in ["ground_truth", "hybrid", "tcav"]:
+            ranked = sorted(top10_candidates[concept_name][method_name], key=lambda kv: -abs(kv[1]))[:10]
             rows_for_grid.append((method_name, ranked))
         build_image_grid(rows_for_grid, TOP10_DIR / f"{concept_name}.png")
     print(f"Saved top-10 grids to {TOP10_DIR}/", flush=True)

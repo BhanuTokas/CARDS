@@ -22,6 +22,15 @@ Two changes from the original script, both requested directly:
    signs together in one row and the sign is exactly the information a
    magnitude-only ranking would otherwise hide.
 
+Top-10 grids show `ground_truth` (real gt_delta_p) instead of
+`baseline` -- checks each method against real masking ground truth
+directly rather than just method-vs-method (matches the original
+script's own convention; this file initially reverted to `baseline` by
+oversight, caught directly and fixed: "Shouldn't the images be with gt
+not baseline?" -> "Can you also correct the existing code to make sure
+you don't repeat the errors again in the future?"). `baseline` is still
+scored and reported in the rho table, just not shown in the grid.
+
 Everything else (the 3 methods' own definitions, the TCAV/hybrid/
 baseline apparatus, the per-concept setup) is IDENTICAL to the original
 script -- see that script's own docstring for the full design rationale.
@@ -226,7 +235,7 @@ def main():
     print(f"\n=== scoring {len(pairs)} (image, concept) pairs ===", flush=True)
     all_out_rows = []
     top10_candidates: dict[str, dict[str, list[tuple[str, float]]]] = {
-        c: {"baseline": [], "hybrid": [], "tcav": []} for c in GROUNDABLE_CONCEPTS
+        c: {"ground_truth": [], "baseline": [], "hybrid": [], "tcav": []} for c in GROUNDABLE_CONCEPTS
     }
 
     for pair_i, ((image_path, concept_name), tasks) in enumerate(pairs.items()):
@@ -285,6 +294,7 @@ def main():
         for task_name, gt_delta_p in tasks.items():
             all_out_rows.append((image_path, concept_name, task_name, gt_delta_p,
                                   baseline_by_task[task_name], hybrid_by_task[task_name], tcav_by_task[task_name]))
+            top10_candidates[concept_name]["ground_truth"].append((image_path, gt_delta_p))
             top10_candidates[concept_name]["baseline"].append((image_path, baseline_by_task[task_name]))
             top10_candidates[concept_name]["hybrid"].append((image_path, hybrid_by_task[task_name]))
             top10_candidates[concept_name]["tcav"].append((image_path, tcav_by_task[task_name]))
@@ -307,10 +317,15 @@ def main():
             rho, p = spearmanr(gt, scores)
             print(f"  [{task_name}] {method_name:<10s} n={len(task_rows)} rho={rho:+.4f} p={p:.4g}", flush=True)
 
-    print("\n=== building top-10-by-|magnitude| grids per concept (sign shown in figure) ===", flush=True)
+    # ground_truth (real gt_delta_p) shown instead of baseline -- checks
+    # each method against real masking ground truth directly, matching
+    # the substitution already applied to the original-ground-truth
+    # grids (initially missed here, caught directly: "Shouldn't the
+    # images be with gt not baseline?").
+    print("\n=== building top-10-by-|magnitude| grids per concept (ground_truth/hybrid/tcav, sign shown) ===", flush=True)
     for concept_name in GROUNDABLE_CONCEPTS:
         rows_for_grid = []
-        for method_name in ["baseline", "hybrid", "tcav"]:
+        for method_name in ["ground_truth", "hybrid", "tcav"]:
             ranked = sorted(top10_candidates[concept_name][method_name], key=lambda kv: -abs(kv[1]))[:10]
             rows_for_grid.append((method_name, ranked))
         build_image_grid(rows_for_grid, TOP10_DIR / f"{concept_name}.png")
