@@ -41,6 +41,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from affine import Affine
 from PIL import Image
 
 from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES
@@ -55,6 +56,35 @@ from cards.validation.broden_faithfulness import mask_region_nir_band
 DISPLAY_STRETCH_MAX = 3000.0
 
 FTW_FILL_STRATEGIES: list[str] = [s for s in DEFAULT_FILL_STRATEGIES if s != "hue_shift"]
+
+
+def normalize_tile_orientation(bands: np.ndarray, profile: dict) -> tuple[np.ndarray, dict]:
+    """Fixes FTW's own "upside-down" tile convention -- confirmed
+    universal across every sampled country (Austria, Belgium, Kenya,
+    Portugal, South Africa all have transform.e > 0, i.e. row index
+    increasing WITH latitude instead of against it, where a standard
+    north-up GeoTIFF has transform.e < 0), NOT a one-off anomaly in a
+    single tile.
+
+    This matters because `ftw_tools.cli inference run`'s own
+    patch-placement code assumes a standard-orientation transform when
+    converting a patch's geographic bounds back to array indices --
+    verified directly (notes/ftw_correlation_investigation.md v6) that
+    feeding it an unfixed tile produces a silent all-zero output (no
+    exception), while a real, sensible prediction comes back once the
+    tile is normalized here. A no-op (returns `bands`/`profile`
+    unchanged) if the transform is already standard-orientation, so this
+    is always safe to call regardless of a given tile's own convention.
+    """
+    t = profile["transform"]
+    if t.e < 0:
+        return bands, profile
+    height = bands.shape[-2]
+    fixed = bands[..., ::-1, :]
+    fixed_transform = Affine(t.a, t.b, t.c, t.d, -t.e, t.f + t.e * height)
+    fixed_profile = profile.copy()
+    fixed_profile["transform"] = fixed_transform
+    return fixed, fixed_profile
 
 
 def load_ftw_tile(path: Path) -> tuple[np.ndarray, dict]:
