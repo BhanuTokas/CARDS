@@ -145,6 +145,76 @@ def mask_region(
     return Image.composite(filled, image.convert("RGB"), mask_img)
 
 
+def mask_region_nir_band(
+    nir: np.ndarray, mask: np.ndarray, strategy: str = "blur",
+    blur_sigma: float = 20.0, noise_std_frac: float = 0.08,
+    zero_value: float | None = None, white_value: float | None = None,
+    mean_value: float | None = None, rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """Single-band analog of `mask_region`, for FTW/PRUE's 4th (NIR)
+    channel -- built for ConceptMask's FTW experiment (Section 4.5 of the
+    CounterConcept paper replicated with masking instead of DDIM
+    generative perturbation), where the black box consumes 4-band
+    (R, G, B, NIR) imagery and the mask must be applied consistently
+    across all 4 channels, not just the 3 `mask_region` itself handles.
+
+    "hue_shift" has no NIR analog (a single reflectance band has no hue)
+    and is intentionally NOT one of this function's strategies -- callers
+    iterating DEFAULT_FILL_STRATEGIES for RGB+NIR should either skip
+    "hue_shift" for the NIR band specifically (leaving NIR unmasked for
+    that one candidate) or exclude "hue_shift" from the shared strategy
+    list entirely; this function raises on it rather than silently
+    guessing.
+
+    NIR value SCALE IS UNCONFIRMED as of writing -- FTW/Sentinel-2 NIR
+    could be 0-255 uint8, 0-1 normalized float, or raw ~0-10000 digital
+    numbers, and the right choice isn't knowable until the actual PRUE
+    preprocessing pipeline is in hand. Rather than hardcode a guessed
+    constant (the way `_IMAGENET_MEAN_RGB` hardcodes a real, confirmed
+    ImageNet statistic for RGB), zero_value/white_value/mean_value all
+    default to being DERIVED FROM `nir`'s own observed min/max/mean when
+    left unset -- correct regardless of scale, at the cost of being
+    per-image rather than a fixed dataset-level constant. Pass explicit
+    values once the real scale is confirmed, if a fixed constant turns
+    out to matter (as it did for RGB's zero_fill/white_fill, CUB v61).
+    """
+    if mask.shape != nir.shape:
+        raise ValueError(f"mask shape {mask.shape} doesn't match nir shape {nir.shape}")
+    if strategy == "hue_shift":
+        raise ValueError("hue_shift has no NIR-band analog -- see this function's own docstring")
+
+    orig_dtype = nir.dtype
+    nir = nir.astype(np.float64)
+    lo, hi = float(nir.min()), float(nir.max())
+    mean = float(nir.mean())
+
+    if strategy == "blur":
+        from scipy.ndimage import gaussian_filter
+        filled = gaussian_filter(nir, sigma=blur_sigma)
+    elif strategy == "mean_fill":
+        filled = np.full_like(nir, mean_value if mean_value is not None else mean)
+    elif strategy == "zero_fill":
+        filled = np.full_like(nir, zero_value if zero_value is not None else lo)
+    elif strategy == "white_fill":
+        filled = np.full_like(nir, white_value if white_value is not None else hi)
+    elif strategy == "zero_fill_noise":
+        if rng is None:
+            raise ValueError("strategy='zero_fill_noise' requires an rng (np.random.Generator) for the noise draw")
+        base = zero_value if zero_value is not None else lo
+        filled = base + rng.normal(loc=0.0, scale=noise_std_frac * (hi - lo), size=nir.shape)
+    elif strategy == "noise_then_blur":
+        from scipy.ndimage import gaussian_filter
+        if rng is None:
+            raise ValueError("strategy='noise_then_blur' requires an rng (np.random.Generator) for the noise draw")
+        base = zero_value if zero_value is not None else lo
+        noise = base + rng.normal(loc=0.0, scale=noise_std_frac * (hi - lo), size=nir.shape)
+        filled = gaussian_filter(noise, sigma=blur_sigma)
+    else:
+        raise ValueError(f"unknown strategy {strategy!r}")
+
+    return np.where(mask, filled, nir).astype(orig_dtype)
+
+
 def _area_matched_rectangle(mask: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Fallback when no valid exact-shape translation is found (relevant
     for concepts covering most of the image) -- a random square of the
