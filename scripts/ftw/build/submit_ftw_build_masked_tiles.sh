@@ -35,5 +35,18 @@ export FTW_K=50   # scale-up value for the full HPC run, confirmed 2026-09-06 (l
 
 mkdir -p logs "$FTW_MASKED_TILES_DIR" "$(dirname "$FTW_EMBEDDING_CACHE")"
 
-cd "$(dirname "$0")/../../.."   # repo root (scripts/ftw/build/ -> CARDS/)
+# SLURM copies the submitted script into its own spool location and runs
+# it from there, so `dirname "$0"` does NOT reliably point back at the repo
+# -- observed directly: it silently landed uv run outside any pyproject.toml,
+# which fell back to system /usr/bin/python3 and then failed to find the
+# (correct, relative) script path. $SLURM_SUBMIT_DIR is the directory
+# `sbatch` was invoked FROM, which is what we actually want -- submit this
+# job from the CARDS repo root.
+cd "$SLURM_SUBMIT_DIR"
+if [ ! -f scripts/ftw/build/build_ftw_masked_tiles.py ]; then
+    echo "ERROR: scripts/ftw/build/build_ftw_masked_tiles.py not found in $(pwd)." >&2
+    echo "Submit this job with sbatch from the CARDS repo root (SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR)." >&2
+    exit 1
+fi
+
 uv run python scripts/ftw/build/build_ftw_masked_tiles.py

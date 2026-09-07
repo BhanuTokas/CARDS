@@ -38,5 +38,13 @@ export FTW_OUTPUT_NAME=conceptmask_ftw_bigearthnet_full.csv
 
 mkdir -p logs
 
-cd "$(dirname "$0")/../../.."   # repo root (scripts/ftw/run/ -> CARDS/)
+# See submit_ftw_build_masked_tiles.sh for why this is $SLURM_SUBMIT_DIR
+# and not a dirname "$0" trick -- confirmed the latter fails under sbatch.
+cd "$SLURM_SUBMIT_DIR"
+if [ ! -f scripts/ftw/run/score_ftw_masked_tiles.py ]; then
+    echo "ERROR: scripts/ftw/run/score_ftw_masked_tiles.py not found in $(pwd)." >&2
+    echo "Submit this job with sbatch from the CARDS repo root (SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR)." >&2
+    exit 1
+fi
+
 uv run python scripts/ftw/run/score_ftw_masked_tiles.py
