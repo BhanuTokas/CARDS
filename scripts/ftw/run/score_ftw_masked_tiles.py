@@ -53,22 +53,24 @@ def main():
     rows = []
     with ThreadPoolExecutor(max_workers=ftw_run.N_PARALLEL_INFERENCE) as executor:
         for concept_idx, (concept_name, jobs) in enumerate(by_concept.items()):
-            deltas = ftw_run.score_jobs(jobs, MASKED_TILES_DIR, executor)
+            deltas, n_failed_inference = ftw_run.score_jobs(jobs, MASKED_TILES_DIR, executor)
             raw_score = float(np.mean(deltas)) if deltas else float("nan")
             summary = summary_by_name.get(concept_name, {})
             rows.append({
                 "concept_name": concept_name, "raw_score": raw_score,
                 "n_present": summary.get("n_present", ""), "n_scored": len(deltas),
                 "n_skipped_degenerate": summary.get("n_skipped_degenerate", ""),
+                "n_failed_inference": n_failed_inference,
             })
             print(f"[{concept_idx + 1}/{len(by_concept)}] {concept_name:<70s} "
-                  f"raw_score={raw_score:+.4f} (n_scored={len(deltas)})", flush=True)
+                  f"raw_score={raw_score:+.4f} (n_scored={len(deltas)}, n_failed_inference={n_failed_inference})", flush=True)
 
     out_name = os.environ.get("FTW_OUTPUT_NAME", "conceptmask_ftw_bigearthnet_full.csv")
     ftw_run.RESULTS_DIR.mkdir(exist_ok=True, parents=True)
     out_path = ftw_run.RESULTS_DIR / out_name
     with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["concept_name", "raw_score", "n_present", "n_scored", "n_skipped_degenerate"])
+        writer = csv.DictWriter(f, fieldnames=["concept_name", "raw_score", "n_present", "n_scored",
+                                                "n_skipped_degenerate", "n_failed_inference"])
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nSaved {len(rows)} concept scores to {out_path}", flush=True)

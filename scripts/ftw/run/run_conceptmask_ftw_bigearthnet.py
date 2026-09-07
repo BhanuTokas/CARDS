@@ -256,30 +256,50 @@ def build_masked_tiles_for_concept(pool, encoder, concept_idx, concept_name, t_c
     return jobs, n_skipped_degenerate, len(present_indices)
 
 
-def score_jobs(jobs, out_dir: Path, executor: ThreadPoolExecutor) -> list[float]:
+def score_jobs(jobs, out_dir: Path, executor: ThreadPoolExecutor) -> tuple[list[float], int]:
     """Phase 2 for one concept's jobs: `ftw_tools.cli inference run` on
     every (idx, orig_tif, masked_tif), parallel + CPU-only, ZERO encoder/
     GPU dependency -- reusable standalone from a CPU-only job that never
     imports/instantiates an encoder at all (scripts/ftw/run/
-    score_ftw_masked_tiles.py)."""
+    score_ftw_masked_tiles.py).
+
+    Returns (deltas, n_failed_inference). A single tile's CLI invocation
+    failing does NOT abort the whole run -- observed directly on Sol: one
+    specific tile (c0_t3796) crashed the CLI with a bare, near-diagnostic-
+    free "Aborted!" at BOTH 32-way/24G and 16-way/32G (different
+    parallelism, different memory, PROJ-env fix applied on the second try)
+    -- ruling out parallelism/memory/PROJ-leak as the cause and pointing to
+    something tile-specific instead. Whatever the root cause, one bad tile
+    out of ~1900 CLI invocations should not discard hours of otherwise-good
+    work; failed tiles are logged and excluded from that concept's raw_score
+    average instead."""
     futures = {}
     out_paths = {}
     for idx, orig_tif, masked_tif in jobs:
         orig_out = out_dir / f"{orig_tif.stem}_out.tif"
         masked_out = out_dir / f"{masked_tif.stem}_out.tif"
         out_paths[idx] = (orig_out, masked_out)
-        futures[executor.submit(run_ftw_inference, orig_tif, orig_out)] = None
-        futures[executor.submit(run_ftw_inference, masked_tif, masked_out)] = None
+        futures[executor.submit(run_ftw_inference, orig_tif, orig_out)] = (idx, orig_tif)
+        futures[executor.submit(run_ftw_inference, masked_tif, masked_out)] = (idx, masked_tif)
+
+    failed_indices = set()
     for future in futures:
-        future.result()  # raises if any invocation failed
+        idx, tif_path = futures[future]
+        try:
+            future.result()
+        except Exception as e:
+            print(f"  WARNING: inference failed on {tif_path}, skipping this tile's delta -- {e}", flush=True)
+            failed_indices.add(idx)
 
     deltas = []
     for idx, orig_tif, masked_tif in jobs:
+        if idx in failed_indices:
+            continue
         orig_out, masked_out = out_paths[idx]
         field_orig = read_field_channel_mean(orig_out)
         field_masked = read_field_channel_mean(masked_out)
         deltas.append(field_orig - field_masked)
-    return deltas
+    return deltas, len(failed_indices)
 
 
 def build_pool(tile_paths: list[Path], encoder) -> CandidatePool:
@@ -369,19 +389,22 @@ def main():
             t_c = queries[concept_name]
             jobs, n_skipped_degenerate, n_present = build_masked_tiles_for_concept(
                 pool, encoder, concept_idx, concept_name, t_c, tmp)
-            deltas = score_jobs(jobs, tmp, executor)
+            deltas, n_failed_inference = score_jobs(jobs, tmp, executor)
 
             raw_score = float(np.mean(deltas)) if deltas else float("nan")
             rows.append({"concept_name": concept_name, "raw_score": raw_score,
                          "n_present": n_present, "n_scored": len(deltas),
-                         "n_skipped_degenerate": n_skipped_degenerate})
+                         "n_skipped_degenerate": n_skipped_degenerate,
+                         "n_failed_inference": n_failed_inference})
             print(f"[{concept_idx + 1}/{len(BIGEARTHNET_19_CLASSES)}] {concept_name:<70s} "
-                  f"raw_score={raw_score:+.4f} (n_scored={len(deltas)}/{n_present})", flush=True)
+                  f"raw_score={raw_score:+.4f} (n_scored={len(deltas)}/{n_present}, "
+                  f"n_failed_inference={n_failed_inference})", flush=True)
 
     out_name = os.environ.get("FTW_OUTPUT_NAME", "conceptmask_ftw_bigearthnet_pilot.csv")
     out_path = RESULTS_DIR / out_name
     with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["concept_name", "raw_score", "n_present", "n_scored", "n_skipped_degenerate"])
+        writer = csv.DictWriter(f, fieldnames=["concept_name", "raw_score", "n_present", "n_scored",
+                                                "n_skipped_degenerate", "n_failed_inference"])
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nSaved {len(rows)} concept scores to {out_path}", flush=True)
