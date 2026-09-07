@@ -24,6 +24,14 @@
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
+# `module purge` alone left a stale mamba-module PROJ database on the
+# search path (observed: "CPLE_AppDefined in PROJ: ... DATABASE.LAYOUT.
+# VERSION.MINOR = 3 whereas a number >= 6 is expected" from rasterio) --
+# likely set by a system-wide hook rather than the module system itself,
+# since purge didn't clear it. Our own code never reprojects/does EPSG
+# lookups (only affine-preserving reads/writes), so this probably wasn't
+# corrupting output, but unset it outright rather than rely on that.
+unset PROJ_LIB PROJ_DATA GDAL_DATA
 
 set -euo pipefail
 

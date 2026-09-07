@@ -24,6 +24,9 @@
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
+# See submit_ftw_build_masked_tiles.sh for why -- a stale mamba-module PROJ
+# database otherwise leaks onto rasterio's search path even after purge.
+unset PROJ_LIB PROJ_DATA GDAL_DATA
 
 set -euo pipefail
 
