@@ -173,7 +173,15 @@ def run_ftw_inference(tile_path: Path, out_path: Path) -> None:
     ]
     result = subprocess.run(cmd, cwd=str(FTW_BASELINES_ROOT), capture_output=True, text=True, env=_clean_subprocess_env())
     if result.returncode != 0:
-        raise RuntimeError(f"ftw_tools.cli inference run failed on {tile_path}:\n{result.stderr}")
+        # Both streams, not just stderr -- a raw process abort (SIGABRT,
+        # "Aborted!") often prints its real diagnostic (GDAL/glibc/
+        # std::bad_alloc messages) to stdout or splits across both, and
+        # stderr alone was observed to show only the bare word "Aborted!"
+        # with zero other context, unhelpfully.
+        raise RuntimeError(
+            f"ftw_tools.cli inference run failed (exit {result.returncode}) on {tile_path}:\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
 
 
 def read_field_channel_mean(output_tif: Path) -> float:

@@ -1,7 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=conceptmask_ftw_score
 #SBATCH -c 32
-#SBATCH --mem 24G
+#SBATCH --mem 32G   # bumped from 24G after a crash ("Aborted!", near-zero diagnostic) at 32-way
+                     # parallel CLI subprocess invocations -- each is a FRESH independent Python
+                     # process (own interpreter + torch + GDAL/rasterio + model weights), not a
+                     # shared worker. Rough estimate ~1-1.5GB/process x 16 (N_PARALLEL_INFERENCE,
+                     # dialed back below) ~= 16-24GB -- 32G is a real but not wildly excessive
+                     # margin, unmeasured/unconfirmed since stderr gave no real diagnostic
 #SBATCH -p public
 #SBATCH -q public
 #SBATCH -t 2-00:00:00   # unknown until a full-dataset timing is measured, adjust
@@ -36,7 +41,9 @@ export FTW_CHECKPOINT=/data/hkerner/btokas/utils/ftw-baselines/models/3_Class_FU
 export FTW_BASELINES_VENV_PYTHON=/data/hkerner/btokas/utils/ftw-baselines/.venv/bin/python                         # confirmed
 export FTW_BASELINES_ROOT=/data/hkerner/btokas/utils/ftw-baselines                                                 # confirmed
 export FTW_RESULTS_DIR=results
-export FTW_N_PARALLEL_INFERENCE=${SLURM_CPUS_PER_TASK}
+export FTW_N_PARALLEL_INFERENCE=16   # dialed back from SLURM_CPUS_PER_TASK (32) as a belt-and-
+                                      # suspenders retry alongside the --mem bump above -- raise
+                                      # back toward 32 once a run completes cleanly at this level
 export FTW_OUTPUT_NAME=conceptmask_ftw_bigearthnet_full.csv
 
 mkdir -p logs
