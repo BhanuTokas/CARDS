@@ -49,4 +49,8 @@ if [ ! -f scripts/ftw/build/build_ftw_masked_tiles.py ]; then
     exit 1
 fi
 
-uv run python scripts/ftw/build/build_ftw_masked_tiles.py
+# --extra ftw: rasterio lives in CARDS' own optional "ftw" dependency group
+# in pyproject.toml -- a bare `uv run` only installs the default set and
+# misses it (observed directly: ModuleNotFoundError: No module named
+# 'rasterio' on the first Sol run).
+uv run --extra ftw python scripts/ftw/build/build_ftw_masked_tiles.py

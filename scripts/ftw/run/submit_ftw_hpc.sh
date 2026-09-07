@@ -47,4 +47,6 @@ if [ ! -f scripts/ftw/run/score_ftw_masked_tiles.py ]; then
     exit 1
 fi
 
-uv run python scripts/ftw/run/score_ftw_masked_tiles.py
+# --extra ftw: rasterio lives in CARDS' own optional "ftw" dependency
+# group -- see submit_ftw_build_masked_tiles.sh for the same fix/reason.
+uv run --extra ftw python scripts/ftw/run/score_ftw_masked_tiles.py
