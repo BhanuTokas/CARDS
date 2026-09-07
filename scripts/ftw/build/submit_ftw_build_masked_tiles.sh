@@ -28,7 +28,7 @@ export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install
 set -euo pipefail
 
 # ---- must match submit_ftw_hpc.sh's FTW_MASKED_TILES_DIR exactly ----
-export FTW_ROOT=/data/hkerner/FTW                                                                                  # confirmed
+export FTW_ROOT=/data/hkerner/FTW/ftw                                                                              # confirmed -- same nested "ftw" subfolder as the local dev machine's own layout
 export FTW_MASKED_TILES_DIR=/data/hkerner/btokas/Datasets/ftw_masked_tiles                                         # confirmed
 export FTW_EMBEDDING_CACHE=/data/hkerner/btokas/Datasets/FTW_embedding_cache/ftw_tiles_siglip.pt                   # confirmed
 export FTW_K=50   # scale-up value for the full HPC run, confirmed 2026-09-06 (local pilot was K=10)
