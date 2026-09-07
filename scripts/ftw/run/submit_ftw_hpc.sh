@@ -32,6 +32,16 @@ export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install
 # See submit_ftw_build_masked_tiles.sh for why -- a stale mamba-module PROJ
 # database otherwise leaks onto rasterio's search path even after purge.
 unset PROJ_LIB PROJ_DATA GDAL_DATA
+# Diagnosing a hard, near-silent "Aborted!" from the ftw_tools CLI subprocess
+# that persisted even after ruling out parallelism, memory, AND package
+# versions (rasterio/GDAL/pyproj/PROJ all confirmed IDENTICAL to a local
+# environment where the exact same tiles process fine) -- same reported
+# versions doesn't guarantee the same .so actually loads at runtime if the
+# dynamic linker's search path is polluted (module purge doesn't always
+# clear this on Sol -- same class of issue as the PROJ database leak above).
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+echo "LD_PRELOAD=$LD_PRELOAD"
+unset LD_LIBRARY_PATH LD_PRELOAD
 
 set -euo pipefail
 
