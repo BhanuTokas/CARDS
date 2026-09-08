@@ -85,13 +85,23 @@ def load_hybrid_official_val_scores() -> dict[str, dict[tuple[int, int], float]]
     return by_task
 
 
-def load_pcbm_scores() -> dict[str, dict[tuple[int, int], float]]:
+def load_pcbm_clip_concepts_scores(csv_name: str) -> dict[str, dict[tuple[int, int], float]]:
+    """The "CLIP concepts" PCBM variant (Yuksekgonul et al. 2023, no image
+    concept dataset needed -- concept vectors come directly from CLIP/
+    SigLIP text embeddings of the concept names) -- v111 in notes/
+    celeba_correlation_investigation.md, two backbones."""
+    by_task: dict[str, dict[tuple[int, int], float]] = {t: {} for t in TARGET_CLASSES}
+    with open(RESULTS_DIR / csv_name, newline="") as f:
+        for row in csv.DictReader(f):
+            by_task[row["target_task"]][(CONCEPT_TO_IDX[row["concept_name"]], 1)] = float(row["weight"])
+    return by_task
+
+
+def load_pcbm_scores(ckpt_dir: str = "trained_models_new/celeba_full/celeba_attractive_young",
+                      ckpt_prefix: str = "pcbm_celeba_full__celeba_attractive_young") -> dict[str, dict[tuple[int, int], float]]:
     by_task: dict[str, dict[tuple[int, int], float]] = {}
     for task_name in TARGET_CLASSES:
-        ckpt_path = (
-            Path("trained_models_new/celeba_full/celeba_attractive_young")
-            / f"pcbm_celeba_full__celeba_attractive_young__{task_name.lower()}__surrogate__seed_42__linear.ckpt"
-        )
+        ckpt_path = Path(ckpt_dir) / f"{ckpt_prefix}__{task_name.lower()}__surrogate__seed_42__linear.ckpt"
         posthoc_layer = torch.load(ckpt_path, weights_only=False)
         weight = posthoc_layer.classifier.weight.detach().cpu().numpy()  # (1, n_concepts) binary-task row
         names = posthoc_layer.names
@@ -145,12 +155,21 @@ def main():
     hybrid_official_val_scores = load_hybrid_official_val_scores()
     tcav_scores = load_tcav_scores()
     pcbm_scores = load_pcbm_scores()
+    pcbm_whole_image_scores = load_pcbm_scores(
+        ckpt_dir="trained_models_new/celeba_full_whole_image/celeba_attractive_young",
+        ckpt_prefix="pcbm_celeba_full_whole_image__celeba_attractive_young",
+    )
+    pcbm_clip_rn50_scores = load_pcbm_clip_concepts_scores("pcbm_clip_concepts_celeba_clip_rn50_scores.csv")
+    pcbm_siglip_scores = load_pcbm_clip_concepts_scores("pcbm_clip_concepts_celeba_siglip_scores.csv")
 
     rows: list[dict] = []
     report("Masking hybrid (alpha=1.0, orth=True, K=50, SigLIP)", "HQ-val", old_records, new_records, hybrid_scores, rows)
     report("Masking hybrid (alpha=1.0, orth=True, K=50, SigLIP)", "Official-val", old_records, new_records, hybrid_official_val_scores, rows)
     report("TCAV (mean_sign_count)", "-", old_records, new_records, tcav_scores, rows, method_threshold=0.5)
     report("PCBM (CAV-based, region-crop bank)", "-", old_records, new_records, pcbm_scores, rows)
+    report("PCBM (CAV-based, whole-image bank)", "-", old_records, new_records, pcbm_whole_image_scores, rows)
+    report("PCBM CLIP-concepts (CLIP RN50 backbone)", "-", old_records, new_records, pcbm_clip_rn50_scores, rows)
+    report("PCBM CLIP-concepts (SigLIP backbone)", "-", old_records, new_records, pcbm_siglip_scores, rows)
 
     out_path = RESULTS_DIR / "celeba_attribute_conditioned_gt_comparison.csv"
     with open(out_path, "w", newline="") as f:
