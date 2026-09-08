@@ -47,33 +47,54 @@ def main():
     for row in manifest_rows:
         by_concept[row["concept_name"]].append((int(row["tile_idx"]), Path(row["orig_tif"]), Path(row["masked_tif"])))
 
-    print(f"{len(manifest_rows)} masked-tile jobs across {len(by_concept)} concepts, "
-          f"N_PARALLEL_INFERENCE={ftw_run.N_PARALLEL_INFERENCE}.", flush=True)
-
-    rows = []
-    with ThreadPoolExecutor(max_workers=ftw_run.N_PARALLEL_INFERENCE) as executor:
-        for concept_idx, (concept_name, jobs) in enumerate(by_concept.items()):
-            deltas, n_failed_inference = ftw_run.score_jobs(jobs, MASKED_TILES_DIR, executor)
-            raw_score = float(np.mean(deltas)) if deltas else float("nan")
-            summary = summary_by_name.get(concept_name, {})
-            rows.append({
-                "concept_name": concept_name, "raw_score": raw_score,
-                "n_present": summary.get("n_present", ""), "n_scored": len(deltas),
-                "n_skipped_degenerate": summary.get("n_skipped_degenerate", ""),
-                "n_failed_inference": n_failed_inference,
-            })
-            print(f"[{concept_idx + 1}/{len(by_concept)}] {concept_name:<70s} "
-                  f"raw_score={raw_score:+.4f} (n_scored={len(deltas)}, n_failed_inference={n_failed_inference})", flush=True)
-
+    FIELDNAMES = ["concept_name", "raw_score", "n_present", "n_scored", "n_skipped_degenerate", "n_failed_inference"]
     out_name = os.environ.get("FTW_OUTPUT_NAME", "conceptmask_ftw_bigearthnet_full.csv")
     ftw_run.RESULTS_DIR.mkdir(exist_ok=True, parents=True)
     out_path = ftw_run.RESULTS_DIR / out_name
-    with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["concept_name", "raw_score", "n_present", "n_scored",
-                                                "n_skipped_degenerate", "n_failed_inference"])
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"\nSaved {len(rows)} concept scores to {out_path}", flush=True)
+
+    # Resumable: if a previous run was interrupted (observed directly -- killed
+    # by the environment for system memory pressure partway through a real
+    # run, losing 11/19 already-completed concepts because the old version
+    # only wrote the CSV once at the very end), pick up where it left off
+    # instead of redoing already-scored concepts. Safe to re-run from scratch
+    # too -- an empty/missing out_path just means nothing to resume.
+    already_done = {}
+    if out_path.exists():
+        with open(out_path, newline="") as f:
+            already_done = {row["concept_name"]: row for row in csv.DictReader(f)}
+        if already_done:
+            print(f"Resuming: {len(already_done)}/{len(by_concept)} concepts already scored in {out_path}.", flush=True)
+
+    print(f"{len(manifest_rows)} masked-tile jobs across {len(by_concept)} concepts, "
+          f"N_PARALLEL_INFERENCE={ftw_run.N_PARALLEL_INFERENCE}.", flush=True)
+
+    write_header = not out_path.exists()
+    with open(out_path, "a", newline="") as out_f:
+        writer = csv.DictWriter(out_f, fieldnames=FIELDNAMES)
+        if write_header:
+            writer.writeheader()
+
+        with ThreadPoolExecutor(max_workers=ftw_run.N_PARALLEL_INFERENCE) as executor:
+            for concept_idx, (concept_name, jobs) in enumerate(by_concept.items()):
+                if concept_name in already_done:
+                    print(f"[{concept_idx + 1}/{len(by_concept)}] {concept_name:<70s} SKIPPED (already scored)", flush=True)
+                    continue
+
+                deltas, n_failed_inference = ftw_run.score_jobs(jobs, MASKED_TILES_DIR, executor)
+                raw_score = float(np.mean(deltas)) if deltas else float("nan")
+                summary = summary_by_name.get(concept_name, {})
+                row = {
+                    "concept_name": concept_name, "raw_score": raw_score,
+                    "n_present": summary.get("n_present", ""), "n_scored": len(deltas),
+                    "n_skipped_degenerate": summary.get("n_skipped_degenerate", ""),
+                    "n_failed_inference": n_failed_inference,
+                }
+                writer.writerow(row)
+                out_f.flush()  # survive a kill immediately after this concept, not just at process exit
+                print(f"[{concept_idx + 1}/{len(by_concept)}] {concept_name:<70s} "
+                      f"raw_score={raw_score:+.4f} (n_scored={len(deltas)}, n_failed_inference={n_failed_inference})", flush=True)
+
+    print(f"\nDone -- {out_path} has all {len(by_concept)} concept scores.", flush=True)
 
 
 if __name__ == "__main__":
