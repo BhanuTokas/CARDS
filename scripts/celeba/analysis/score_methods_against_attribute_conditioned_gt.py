@@ -14,6 +14,14 @@ documented design). This just re-aggregates the NEW ground truth and
 re-correlates the SAME already-computed score tables against it,
 printed side by side with the ORIGINAL ground truth's own numbers for
 direct comparison.
+
+Also writes `results/celeba_attribute_conditioned_gt_comparison.csv` --
+previously this only printed to the terminal (the v113 table in notes/
+celeba_correlation_investigation.md was recovered from a screenshot of
+that output after the session that produced it got compacted), prompted
+directly ("can you check if the code is available to regenerate these
+results?" / "Yes please!" -- add a CSV write so this is never
+screenshot-dependent again).
 """
 
 from __future__ import annotations
@@ -91,16 +99,42 @@ def load_pcbm_scores() -> dict[str, dict[tuple[int, int], float]]:
     return by_task
 
 
-def report(label: str, records_by_task, scores_by_task, method_threshold: float = 0.0):
-    print(f"\n=== {label} ===", flush=True)
+def _stats_for(records, scores, method_threshold):
+    """-> dict[task_name] = (rho_r, sign_r), either possibly None if too few pairs."""
+    out = {}
     for task_name in TARGET_CLASSES:
-        rho_r = score_method_agreement(records_by_task[task_name], scores_by_task[task_name])
-        sign_r = score_sign_agreement(records_by_task[task_name], scores_by_task[task_name], method_threshold=method_threshold)
-        if rho_r is None:
+        rho_r = score_method_agreement(records[task_name], scores[task_name])
+        sign_r = score_sign_agreement(records[task_name], scores[task_name], method_threshold=method_threshold)
+        out[task_name] = (rho_r, sign_r)
+    return out
+
+
+def report(method: str, pool: str, old_records, new_records, scores_by_task, rows: list, method_threshold: float = 0.0):
+    """Prints BOTH ground-truth versions side by side (same terminal
+    output shape as before) AND appends one row per task to `rows` for
+    the CSV write -- computed together per call instead of two separate
+    top-level report() blocks, so old/new never have to be re-matched
+    afterward."""
+    print(f"\n=== {method}, {pool} ===", flush=True)
+    old_stats = _stats_for(old_records, scores_by_task, method_threshold)
+    new_stats = _stats_for(new_records, scores_by_task, method_threshold)
+    for task_name in TARGET_CLASSES:
+        rho_old, sign_old = old_stats[task_name]
+        rho_new, sign_new = new_stats[task_name]
+        if rho_old is None or rho_new is None:
             print(f"  [{task_name}] too few pairs")
             continue
-        print(f"  [{task_name}] n={rho_r.n_pairs} rho={rho_r.spearman_rho:+.4f} (p={rho_r.spearman_p:.4g})  "
-              f"sign={sign_r.agreement_frac:.1%} ({sign_r.n_agree}/{sign_r.n_pairs}, p={sign_r.binom_p:.4g})", flush=True)
+        print(f"  [{task_name}] orig:     n={rho_old.n_pairs} rho={rho_old.spearman_rho:+.4f} (p={rho_old.spearman_p:.4g})  "
+              f"sign={sign_old.agreement_frac:.1%} ({sign_old.n_agree}/{sign_old.n_pairs}, p={sign_old.binom_p:.4g})", flush=True)
+        print(f"  [{task_name}] corrected: n={rho_new.n_pairs} rho={rho_new.spearman_rho:+.4f} (p={rho_new.spearman_p:.4g})  "
+              f"sign={sign_new.agreement_frac:.1%} ({sign_new.n_agree}/{sign_new.n_pairs}, p={sign_new.binom_p:.4g})", flush=True)
+        rows.append({
+            "method": method, "pool": pool, "task": task_name,
+            "n_orig": rho_old.n_pairs, "rho_orig": rho_old.spearman_rho, "rho_p_orig": rho_old.spearman_p,
+            "sign_frac_orig": sign_old.agreement_frac, "sign_p_orig": sign_old.binom_p,
+            "n_corrected": rho_new.n_pairs, "rho_corrected": rho_new.spearman_rho, "rho_p_corrected": rho_new.spearman_p,
+            "sign_frac_corrected": sign_new.agreement_frac, "sign_p_corrected": sign_new.binom_p,
+        })
 
 
 def main():
@@ -112,17 +146,21 @@ def main():
     tcav_scores = load_tcav_scores()
     pcbm_scores = load_pcbm_scores()
 
-    print("############## ORIGINAL ground truth (region-filtered only, target-positive only) ##############")
-    report("Masking hybrid, HQ-val (alpha=1.0, orth=True, K=50, SigLIP)", old_records, hybrid_scores)
-    report("Masking hybrid, OFFICIAL-val (same config)", old_records, hybrid_official_val_scores)
-    report("TCAV (mean_sign_count)", old_records, tcav_scores, method_threshold=0.5)
-    report("PCBM (CAV-based, region-crop bank)", old_records, pcbm_scores)
+    rows: list[dict] = []
+    report("Masking hybrid (alpha=1.0, orth=True, K=50, SigLIP)", "HQ-val", old_records, new_records, hybrid_scores, rows)
+    report("Masking hybrid (alpha=1.0, orth=True, K=50, SigLIP)", "Official-val", old_records, new_records, hybrid_official_val_scores, rows)
+    report("TCAV (mean_sign_count)", "-", old_records, new_records, tcav_scores, rows, method_threshold=0.5)
+    report("PCBM (CAV-based, region-crop bank)", "-", old_records, new_records, pcbm_scores, rows)
 
-    print("\n############## CORRECTED ground truth (attribute-conditioned, both label directions) ##############")
-    report("Masking hybrid, HQ-val (alpha=1.0, orth=True, K=50, SigLIP)", new_records, hybrid_scores)
-    report("Masking hybrid, OFFICIAL-val (same config)", new_records, hybrid_official_val_scores)
-    report("TCAV (mean_sign_count)", new_records, tcav_scores, method_threshold=0.5)
-    report("PCBM (CAV-based, region-crop bank)", new_records, pcbm_scores)
+    out_path = RESULTS_DIR / "celeba_attribute_conditioned_gt_comparison.csv"
+    with open(out_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "method", "pool", "task", "n_orig", "rho_orig", "rho_p_orig", "sign_frac_orig", "sign_p_orig",
+            "n_corrected", "rho_corrected", "rho_p_corrected", "sign_frac_corrected", "sign_p_corrected",
+        ])
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\nSaved {len(rows)} rows to {out_path}", flush=True)
 
 
 if __name__ == "__main__":

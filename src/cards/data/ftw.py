@@ -97,13 +97,80 @@ def load_ftw_tile(path: Path) -> tuple[np.ndarray, dict]:
 
 
 def write_ftw_tile(path: Path, bands_rgbn: np.ndarray, profile: dict) -> None:
-    """Writes `bands_rgbn` (4, H, W) back out with `profile`'s own
+    """Writes `bands_rgbn` (N, H, W) back out with `profile`'s own
     CRS/transform/dtype, unchanged -- required for `ftw_tools.cli
-    inference run` to interpret the tile correctly."""
+    inference run` to interpret the tile correctly. Band-count-agnostic
+    (works for both the 4-band single-window case and the 8-band
+    stacked dual-window case -- `count` is derived from the array, not
+    hardcoded)."""
     out_profile = profile.copy()
     out_profile["count"] = bands_rgbn.shape[0]
     with rasterio.open(path, "w", **out_profile) as dst:
         dst.write(bands_rgbn)
+
+
+def window_b_path_for(window_a_path: Path) -> Path:
+    """FTW's own directory convention: window_a and window_b tiles share
+    the same filename, differing only in which `s2_images/window_*`
+    subdirectory they live under -- confirmed directly (matching file
+    counts, same tile IDs, `.../austria/s2_images/window_a/g77_00002_10.tif`
+    vs `.../austria/s2_images/window_b/g77_00002_10.tif`)."""
+    parts = list(window_a_path.parts)
+    idx = parts.index("window_a")  # raises ValueError if not a window_a path -- fail loudly, don't guess
+    parts[idx] = "window_b"
+    return Path(*parts)
+
+
+def scale_for_dual_window_cli(bands: np.ndarray) -> np.ndarray:
+    """Compensates for a real, confirmed normalization mismatch between
+    the dual-window PRUE checkpoint (FTW_PRUE_EFNET_B7_CCBY) and the
+    official `ftw_tools.cli inference run`'s hardcoded preprocessing.
+
+    `inference.py`'s `default_preprocess` always divides by 3000 (the
+    older single-window FTW baseline convention). But the dual-window
+    PRUE model was trained on inputs normalized to "surface reflectance
+    units (division by 10,000...)" per the PRUE global-mapping paper's
+    Methods section -- confirmed EMPIRICALLY, not just by re-reading the
+    paper: feeding real DNs through the CLI unscaled produces a
+    confidently-wrong all-background prediction (field channel exactly
+    0) on tiles the single-window model correctly finds strong field
+    signal in; pre-scaling by 0.3 (so CLI's /3000 works out to /10000
+    effectively) recovers a real, non-degenerate prediction matching the
+    single-window model's own result on the same tile almost exactly
+    (field channel mean 160.3 vs 162.8).
+
+    Per "stick to the official code" -- this compensates on the INPUT
+    side (like `normalize_tile_orientation` does for the upside-down-
+    transform bug, notes v6), not by patching `default_preprocess`
+    itself. Only apply this to tiles destined for the dual-window
+    checkpoint -- the single-window checkpoint's own /3000 assumption is
+    correct as-is (see v8/v9), do NOT apply this scaling there."""
+    return np.clip(bands.astype(np.float64) * 0.3, 0, 65535).astype(bands.dtype)
+
+
+def stack_ftw_windows(bands_a: np.ndarray, bands_b: np.ndarray, profile: dict) -> np.ndarray:
+    """Concatenates window_a's and window_b's 4 raw bands into one 8-band
+    array for the dual-window PRUE model (`in_channels=8`, confirmed
+    directly from the PRUE global-mapping paper: "the encoder processes
+    the 8-channel bi-temporal input (4 RGBN bands x 2 time steps)" --
+    notes v10).
+
+    Order is [window_b, window_a] (window_b's bands first) -- the
+    apparent default throughout the ftw-baselines codebase (`datasets.py`'s
+    "stacked" temporal option appends window_b before window_a; `cli.py`'s
+    own `--swap_order` help text describes "(window_a, window_b) instead
+    of the default (window_b, window_a)"), NOT explicitly confirmed by
+    the paper itself. The paper DOES confirm the model was trained with
+    "channel shuffling for input-order invariance" augmentation, which
+    de-risks getting this detail wrong, but doesn't make it moot -- pick
+    ONE consistent convention (this one) rather than mixing them.
+
+    Both windows are assumed to already share the same shape/profile
+    (same physical tile location at two dates) -- asserts rather than
+    silently mismatching if they don't."""
+    if bands_a.shape != bands_b.shape:
+        raise ValueError(f"window_a/window_b shape mismatch: {bands_a.shape} vs {bands_b.shape}")
+    return np.concatenate([bands_b, bands_a], axis=0)
 
 
 def raw_bands_to_display_rgb(bands_rgbn: np.ndarray, stretch_max: float = DISPLAY_STRETCH_MAX) -> Image.Image:
