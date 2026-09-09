@@ -20,7 +20,20 @@ dependencies = [
     # construction with "No module named 'transformers'" (found while
     # actually running it for the first time; the config existed but was
     # never exercised end to end before).
-    "transformers>=4.40",
+    # Pinned exactly (not just upper-bounded): confirmed directly that
+    # transformers 5.15's new "heterogeneity" config-integration layer
+    # breaks Florence-2's `trust_remote_code` config class
+    # (AttributeError on `forced_bos_token_id`, inside AutoConfig.
+    # from_pretrained, before any CARDS code runs) -- AND that 4.57.6 (the
+    # newest 4.x, i.e. what a bare `<5.0` upper bound resolves to) breaks
+    # it differently, via a newer attn-implementation-dispatch refactor
+    # (`AttributeError: ... has no attribute '_supports_sdpa'` inside
+    # Florence2ForConditionalGeneration.__init__). 4.49.0 is the one
+    # version confirmed (scripts/captioning/build/
+    # generate_captions_with_logprobs.py) to load Florence-2's remote code
+    # cleanly AND pass the full test suite -- an exact pin, not a range,
+    # since the compatible window is this narrow.
+    "transformers==4.49.0",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +86,22 @@ imagenet = [
 # own Steps 1-7 pipeline -- a comparison-arm dependency only.
 tcav = [
     "captum>=0.7",
+]
+# Only needed by scripts/captioning/build/generate_captions_with_logprobs.py
+# (the 5 modern-VLM half of the DBAC captioning-bias track's 13-model
+# ground-truth set) -- transformers itself is already core, but the
+# individual model classes need these: accelerate for device_map/
+# low_cpu_mem_usage on the two 7B LLaVA variants, sentencepiece for their
+# LLaMA-based tokenizer, timm + einops for Florence-2's DaViT vision
+# backbone (loaded via trust_remote_code, not a direct import CARDS
+# controls -- einops import requirement confirmed directly, its own
+# `check_imports` refused to load without it even though nothing under
+# src/cards imports it here).
+captioning = [
+    "accelerate>=0.30",
+    "sentencepiece>=0.2",
+    "timm>=1.0",
+    "einops>=0.8",
 ]
 
 [dependency-groups]
