@@ -58,7 +58,7 @@ BATCH_SIZE = 64
 N_CAV_SAMPLES = 50  # matches fit_celeba_full_whole_image_cavs.py -- needs 2*50=100 pos/neg per concept
 MAX_PER_CLASS = 150  # matches fit_celeba_full_whole_image_cavs.py's own MAX_PER_CLASS
 CAV_C_VALUE = 0.1   # matches train_pcbm_surrogate_celeba_full_whole_image.py's own CONCEPT_BANK_PATH C value
-RATES_PCT = [0, 33, 67, 100]
+RATES_PCT = list(range(0, 101, 10))
 
 
 class FlattenedFeatureExtractor(nn.Module):

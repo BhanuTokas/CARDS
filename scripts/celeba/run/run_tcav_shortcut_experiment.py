@@ -75,7 +75,7 @@ N_CONTROL = 6
 N_PER_RANDOM_SET = 25
 N_CONCEPT_EXEMPLARS = 40
 N_VAL_SAMPLES = 40
-RATES_PCT = [0, 33, 67, 100]
+RATES_PCT = list(range(0, 101, 10))
 HOOK_LAYER = "layer4"
 TARGET_IDX = 1  # single 2-way head's positive-class logit
 

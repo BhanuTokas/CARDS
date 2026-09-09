@@ -64,7 +64,7 @@ CKPT_DIR = Path("trained_models_new/celeba")
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 128
-RATES_PCT = [0, 33, 67, 100]
+RATES_PCT = list(range(0, 101, 10))
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
 
 BACKBONE_CFGS = {

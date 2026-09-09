@@ -74,7 +74,7 @@ LR_BACKBONE = 1e-5
 IMG_SIZE = 224
 TARGET_TASK = "Attractive"
 
-RATES = [0.0, 0.33, 0.67, 1.0]  # 0%, 33%, 67%, 100%
+RATES = [round(x, 2) for x in np.arange(0.0, 1.01, 0.1)]  # 0%, 10%, 20%, ..., 100%
 SHORTCUT_SIZE = 10
 SHORTCUT_MARGIN = 4
 SHORTCUT_COLOR_POSITIVE = (255, 0, 255)  # magenta, Attractive=1
@@ -148,6 +148,16 @@ def evaluate(model: nn.Module, loader: DataLoader) -> float:
 
 def train_one_rate(rate: float, image_paths, labels, train_idx, val_idx) -> dict:
     rate_pct = round(rate * 100)
+    ckpt_path = CKPT_DIR / f"resnet18_attractive_shortcut_{rate_pct}.pt"
+    info_path = CKPT_DIR / f"run_info_shortcut_{rate_pct}.pkl"
+    if ckpt_path.exists() and info_path.exists():
+        # 0%/100% already trained from the original 4-rate run (same SEED,
+        # same split, deterministic training procedure) -- skip re-training,
+        # not just re-saving the same checkpoint under a new run.
+        print(f"\n=== rate={rate_pct}% already trained, skipping ===", flush=True)
+        with open(info_path, "rb") as f:
+            return pickle.load(f)
+
     print(f"\n=== training rate={rate_pct}% ===", flush=True)
 
     train_ds = ShortcutDataset([image_paths[i] for i in train_idx], labels[train_idx], rate, seed=SEED, augment=True)
@@ -169,7 +179,6 @@ def train_one_rate(rate: float, image_paths, labels, train_idx, val_idx) -> dict
     best_val_loss = float("inf")
     best_state = None
     epochs_without_improvement = 0
-    ckpt_path = CKPT_DIR / f"resnet18_attractive_shortcut_{rate_pct}.pt"
 
     for epoch in range(1, MAX_EPOCHS + 1):
         model.train()
@@ -217,7 +226,7 @@ def train_one_rate(rate: float, image_paths, labels, train_idx, val_idx) -> dict
         "rate": rate, "rate_pct": rate_pct, "same_rate_val_acc": same_rate_acc, "clean_val_acc": clean_acc,
         "best_val_loss": best_val_loss, "n_train": len(train_idx), "n_val": len(val_idx), "seed": SEED,
     }
-    with open(CKPT_DIR / f"run_info_shortcut_{rate_pct}.pkl", "wb") as f:
+    with open(info_path, "wb") as f:
         pickle.dump(run_info, f)
     print(f"Saved checkpoint to {ckpt_path}", flush=True)
     return run_info

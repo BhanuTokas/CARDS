@@ -77,7 +77,7 @@ ALPHA = 1.0
 SEED = 42
 FILL_STRATEGIES = ["blur", "zero_fill", "mean_fill", "hue_shift", "white_fill", "zero_fill_noise", "noise_then_blur"]
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
-RATES_PCT = [0, 33, 67, 100]
+RATES_PCT = list(range(0, 101, 10))
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
