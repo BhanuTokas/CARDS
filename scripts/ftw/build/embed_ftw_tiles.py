@@ -25,10 +25,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
+import run_conceptmask_ftw_bigearthnet as ftw_run
 from omegaconf import OmegaConf
 
-import run_conceptmask_ftw_bigearthnet as ftw_run
-from cards.concepts.prompts import compute_text_center, GENERIC_REFERENCE_CONCEPTS
+from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, compute_text_center
 from cards.pipeline import instantiate_encoder
 
 

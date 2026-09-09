@@ -81,7 +81,13 @@ from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.bigearthnet import BIGEARTHNET_19_CLASSES
 from cards.data.ftw import (
     FTW_FILL_STRATEGIES,
@@ -91,7 +97,6 @@ from cards.data.ftw import (
     raw_bands_to_display_rgb,
     write_ftw_tile,
 )
-from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.pool import CandidatePool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
@@ -171,7 +176,10 @@ def run_ftw_inference(tile_path: Path, out_path: Path) -> None:
         "--save_scores", "--patch_size", "256", "--padding", "0",
         "--num_workers", "1", "--overwrite",
     ]
-    result = subprocess.run(cmd, cwd=str(FTW_BASELINES_ROOT), capture_output=True, text=True, env=_clean_subprocess_env())
+    # check=False (explicit): we handle a non-zero return code ourselves below
+    # (raising a RuntimeError with the full stdout/stderr), not via CalledProcessError.
+    result = subprocess.run(cmd, cwd=str(FTW_BASELINES_ROOT), capture_output=True, text=True,
+                             env=_clean_subprocess_env(), check=False)
     if result.returncode != 0:
         # Both streams, not just stderr -- a raw process abort (SIGABRT,
         # "Aborted!") often prints its real diagnostic (GDAL/glibc/
@@ -283,11 +291,14 @@ def score_jobs(jobs, out_dir: Path, executor: ThreadPoolExecutor) -> tuple[list[
         futures[executor.submit(run_ftw_inference, masked_tif, masked_out)] = (idx, masked_tif)
 
     failed_indices = set()
-    for future in futures:
-        idx, tif_path = futures[future]
+    for future, (idx, tif_path) in futures.items():
         try:
             future.result()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- deliberately broad: ANY failure from a
+            # single tile's CLI subprocess call should be logged and excluded, not
+            # propagate and abort the whole run (this function's entire purpose, see
+            # docstring) -- narrowing to RuntimeError only would miss other genuine
+            # failure modes (e.g. a future-level exception from the executor itself).
             print(f"  WARNING: inference failed on {tif_path}, skipping this tile's delta -- {e}", flush=True)
             failed_indices.add(idx)
 

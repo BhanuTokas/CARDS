@@ -23,10 +23,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
+import run_conceptmask_ftw_dual_window as ftw_dual
 from omegaconf import OmegaConf
 
-import run_conceptmask_ftw_dual_window as ftw_dual
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.bigearthnet import BIGEARTHNET_19_CLASSES
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 

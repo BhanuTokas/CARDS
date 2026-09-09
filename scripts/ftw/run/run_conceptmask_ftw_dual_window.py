@@ -64,7 +64,15 @@ from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+import torch.nn.functional as F
+
+from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.bigearthnet import BIGEARTHNET_19_CLASSES
 from cards.data.ftw import (
     FTW_FILL_STRATEGIES,
@@ -77,11 +85,9 @@ from cards.data.ftw import (
     window_b_path_for,
     write_ftw_tile,
 )
-from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
 from cards.retrieval.pool import CandidatePool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
-import torch.nn.functional as F
 
 # Every machine-specific path is env-var-overridable, same convention as
 # run_conceptmask_ftw_bigearthnet.py.
@@ -132,7 +138,10 @@ def run_ftw_inference(tile_path: Path, out_path: Path) -> None:
         "--save_scores", "--patch_size", "256", "--padding", "0",
         "--num_workers", "1", "--overwrite",
     ]
-    result = subprocess.run(cmd, cwd=str(FTW_BASELINES_ROOT), capture_output=True, text=True, env=_clean_subprocess_env())
+    # check=False (explicit): we handle a non-zero return code ourselves below
+    # (raising a RuntimeError with the full stdout/stderr), not via CalledProcessError.
+    result = subprocess.run(cmd, cwd=str(FTW_BASELINES_ROOT), capture_output=True, text=True,
+                             env=_clean_subprocess_env(), check=False)
     if result.returncode != 0:
         raise RuntimeError(
             f"ftw_tools.cli inference run failed (exit {result.returncode}) on {tile_path}:\n"
@@ -195,7 +204,9 @@ def build_masked_tiles_for_concept(pool, encoder, concept_idx, concept_name, t_c
     for idx in present_indices:
         a_path = pool.paths[idx]
         bands_a, profile_a = load_ftw_tile(a_path)
-        bands_b, profile_b = load_ftw_tile(window_b_path_for(a_path))
+        # profile_b unused: window_a/window_b share the same CRS/transform
+        # (same physical tile, two dates) -- profile_a is used for both.
+        bands_b, _profile_b = load_ftw_tile(window_b_path_for(a_path))
         display_a = raw_bands_to_display_rgb(bands_a)
         display_b = raw_bands_to_display_rgb(bands_b)
         sim_map_a = localize_concept(encoder, display_a, t_c, (display_a.height, display_a.width))
@@ -287,11 +298,13 @@ def score_jobs(jobs, out_dir: Path, executor: ThreadPoolExecutor):
 
     n_failed_inference = 0
     failed = set()  # (idx, name)
-    for future in futures:
-        idx, name, tif = futures[future]
+    for future, (idx, name, tif) in futures.items():
         try:
             future.result()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- deliberately broad, same reasoning
+            # as the single-window score_jobs (run_conceptmask_ftw_bigearthnet.py):
+            # any failure from a single tile's CLI call should be logged and
+            # excluded, not abort the whole run.
             print(f"  WARNING: inference failed on {tif}, skipping -- {e}", flush=True)
             failed.add((idx, name))
             n_failed_inference += 1
