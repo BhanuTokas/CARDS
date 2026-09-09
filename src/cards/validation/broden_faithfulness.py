@@ -406,6 +406,8 @@ class AgreementResult:
     n_pairs: int
     spearman_rho: float
     spearman_p: float
+    pearson_r: float
+    pearson_p: float
 
 
 def score_method_agreement(
@@ -415,16 +417,20 @@ def score_method_agreement(
 ) -> AgreementResult | None:
     """Aggregates `delta_p` per unique (concept_number, predicted_class)
     pair across all Broden images sharing it (requiring >=
-    min_samples_per_pair images), Spearman-correlates against any
-    method's own (concept, class) -> importance score table.
-    `method_scores` is the common denominator: CARDS' raw_score, TCAV's
-    sign_count/magnitude, and PCBM's own weight are all reducible to
-    exactly this (concept, class) -> scalar shape, so one function scores
-    all three methods identically against the masking ground truth.
+    min_samples_per_pair images), correlates (both Spearman rank and
+    Pearson linear) against any method's own (concept, class) ->
+    importance score table. `method_scores` is the common denominator:
+    CARDS' raw_score, TCAV's sign_count/magnitude, and PCBM's own weight
+    are all reducible to exactly this (concept, class) -> scalar shape, so
+    one function scores all three methods identically against the masking
+    ground truth. Pearson is reported alongside Spearman (not instead of
+    it) -- it additionally assumes a linear relationship and is sensitive
+    to outlier magnitude in a way Spearman's rank-only comparison isn't,
+    so the two can legitimately disagree; report both rather than picking.
     Returns None if fewer than 3 pairs have both a faithfulness
     aggregate and a method score (too few for a meaningful correlation).
     """
-    from scipy.stats import spearmanr
+    from scipy.stats import pearsonr, spearmanr
 
     aggregated = _aggregate_faithfulness_pairs(faithfulness_records, method_scores, min_samples_per_pair)
 
@@ -434,8 +440,10 @@ def score_method_agreement(
     pairs = list(aggregated.keys())
     x = [aggregated[p] for p in pairs]
     y = [method_scores[p] for p in pairs]
-    rho, p = spearmanr(x, y)
-    return AgreementResult(n_pairs=len(pairs), spearman_rho=float(rho), spearman_p=float(p))
+    rho, sp_p = spearmanr(x, y)
+    r, pe_p = pearsonr(x, y)
+    return AgreementResult(n_pairs=len(pairs), spearman_rho=float(rho), spearman_p=float(sp_p),
+                            pearson_r=float(r), pearson_p=float(pe_p))
 
 
 @dataclass
