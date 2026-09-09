@@ -90,7 +90,16 @@ scoring_mode: retrieval
 masking_hybrid:
   top_pct: 15
   fill_strategies: [blur, zero_fill, mean_fill, hue_shift, white_fill, zero_fill_noise, noise_then_blur]
-  threshold_method: top_pct  # or "otsu" -- see threshold_mask's own docstring for why top_pct is the default
+  # "top_pct" (default) | "otsu" (see threshold_mask's own docstring for
+  # why it isn't the default) | "zscore" (per-concept mean + alpha*std
+  # cutoff pooled across all present images, cards.attribution.
+  # localization.concept_zscore_cutoff -- the CelebA track's own
+  # validated best config, "v96, alpha=1.0", referenced throughout
+  # notes/celeba_correlation_investigation.md as the current best-
+  # validated setting, previously only ever wired up ad hoc per-script
+  # rather than through this pipeline).
+  threshold_method: top_pct
+  alpha: 1.0  # only used when threshold_method == "zscore"
 
 output_dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 

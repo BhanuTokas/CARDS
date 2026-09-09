@@ -635,3 +635,25 @@ def test_score_masking_hybrid_concepts_uses_config_defaults_when_unset(monkeypat
     assert captured["top_pct"] == 15
     assert captured["fill_strategies"] == DEFAULT_FILL_STRATEGIES
     assert captured["threshold_method"] == "top_pct"
+    assert captured["alpha"] == 1.0
+
+
+def test_score_masking_hybrid_concepts_threads_zscore_config_through(monkeypatch):
+    from cards.attribution.masking_mode import MaskingScoreResult
+
+    captured = {}
+
+    def fake_masking_score(black_box, encoder, pool, present_indices, query, **kwargs):
+        captured.update(kwargs)
+        return MaskingScoreResult(raw_score=0.0)
+
+    monkeypatch.setattr("cards.pipeline.masking_score", fake_masking_score)
+
+    direction = ConceptDirection(concept="dog", unit_vector=torch.tensor([1.0]), magnitude=1.0)
+    result = ConceptResult(direction=direction, present_indices=[0], absent_indices=[], query=torch.tensor([1.0]))
+    cfg = OmegaConf.create({"seed": 0, "masking_hybrid": {"threshold_method": "zscore", "alpha": 2.5}})
+
+    score_masking_hybrid_concepts(cfg, encoder=None, black_box=None, pool=None, concepts=["dog"], results=[result])
+
+    assert captured["threshold_method"] == "zscore"
+    assert captured["alpha"] == 2.5

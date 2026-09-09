@@ -280,12 +280,13 @@ def score_masking_hybrid_concepts(
     top_pct = hybrid_cfg.get("top_pct", 15)
     fill_strategies = list(hybrid_cfg.get("fill_strategies", DEFAULT_FILL_STRATEGIES))
     threshold_method = hybrid_cfg.get("threshold_method", "top_pct")
+    alpha = hybrid_cfg.get("alpha", 1.0)
 
     scores: dict[str, MaskingScoreResult] = {}
     for concept_idx, (concept, result) in enumerate(zip(concepts, results)):
         hybrid_result = masking_score(
             black_box, encoder, pool, result.present_indices, result.query,
-            top_pct=top_pct, fill_strategies=fill_strategies, threshold_method=threshold_method,
+            top_pct=top_pct, fill_strategies=fill_strategies, threshold_method=threshold_method, alpha=alpha,
             seed=cfg.seed, concept_idx=concept_idx,
         )
         scores[concept] = hybrid_result

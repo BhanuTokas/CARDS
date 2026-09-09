@@ -28,7 +28,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from cards.attribution.localization import localize_concept, threshold_mask
+from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
 from cards.encoders.base import PatchLocalizableEncoder
 from cards.models.base import BlackBoxModel
 from cards.retrieval.pool import CandidatePool
@@ -58,6 +58,7 @@ def masking_score(
     top_pct: float = 15,
     fill_strategies: list[str] | None = None,
     threshold_method: str = "top_pct",
+    alpha: float = 1.0,
     seed: int = 0,
     concept_idx: int = 0,
 ) -> MaskingScoreResult:
@@ -69,6 +70,17 @@ def masking_score(
     v79-v82), then score black_box(original) - black_box(masked) on
     that one image. `raw_score` is the mean of those per-image deltas.
 
+    `threshold_method="zscore"` (cards.attribution.localization.
+    concept_zscore_cutoff -- the CelebA track's own validated default,
+    "v96", `alpha=1.0`) needs one cutoff pooled across EVERY present
+    image's own similarity map before any single image can be
+    thresholded, unlike "top_pct"/"otsu" which threshold each image
+    independently -- so every present image is loaded and localized
+    upfront regardless of threshold_method (behavior-identical to the old
+    per-image-at-a-time pass for "top_pct"/"otsu", just cached instead of
+    recomputed), and the shared cutoff is only computed when needed.
+    `alpha` is ignored for every other threshold_method.
+
     `seed`/`concept_idx` reproduce the exact per-(concept, image) rng
     seeding formula validated throughout this investigation (`seed +
     concept_idx * 10_000 + int(pool_index)`), keyed on the POOL index
@@ -78,11 +90,17 @@ def masking_score(
     if fill_strategies is None:
         fill_strategies = DEFAULT_FILL_STRATEGIES
 
+    images = {idx: Image.open(pool.paths[idx]).convert("RGB") for idx in present_indices}
+    sim_maps = {idx: localize_concept(encoder, images[idx], query, (images[idx].height, images[idx].width))
+                for idx in present_indices}
+    zscore_cutoff = concept_zscore_cutoff(list(sim_maps.values()), alpha) if threshold_method == "zscore" else None
+
     result = MaskingScoreResult(raw_score=0.0)
     for idx in present_indices:
-        image = Image.open(pool.paths[idx]).convert("RGB")
-        sim_map = localize_concept(encoder, image, query, (image.height, image.width))
-        mask = threshold_mask(sim_map, top_pct=top_pct, method=threshold_method)
+        image = images[idx]
+        sim_map = sim_maps[idx]
+        mask = (threshold_mask(sim_map, method="fixed", cutoff=zscore_cutoff) if threshold_method == "zscore"
+                else threshold_mask(sim_map, top_pct=top_pct, method=threshold_method))
         if not mask.any() or mask.all():
             result.n_skipped_degenerate += 1
             continue
