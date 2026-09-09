@@ -212,6 +212,16 @@ def mask_region_nir_band(
     else:
         raise ValueError(f"unknown strategy {strategy!r}")
 
+    # Clip before casting back to orig_dtype -- "zero_fill_noise"/"noise_then_blur"
+    # add zero-mean Gaussian noise around `base` (often the band's own near-zero
+    # minimum), so a real fraction of `filled` goes negative. Casting a negative
+    # float straight to an unsigned dtype (uint16 for FTW bands) WRAPS AROUND to
+    # a value near the dtype's max, not 0 -- confirmed directly (-5.0 -> 65531 for
+    # uint16) -- turning intended dark fill into near-max-brightness noise for
+    # those pixels. The RGB analog (`mask_region`, same file) already clips for
+    # these same strategies (`np.clip(noise, 0, 255).astype(np.uint8)`); this was
+    # a real omission here, not an intentional difference (caught by code review).
+    filled = np.clip(filled, 0, np.iinfo(orig_dtype).max) if np.issubdtype(orig_dtype, np.integer) else filled
     return np.where(mask, filled, nir).astype(orig_dtype)
 
 
