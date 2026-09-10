@@ -33,5 +33,9 @@ MAX_LEN="${MAX_LEN:-200}"
 mkdir -p logs
 echo "model_type=$MODEL_TYPE image_set=$IMAGE_SET max_len=$MAX_LEN"
 
+# This cluster's own paths, confirmed directly by the user.
+export CAPTIONING_COCO_ROOT="/data/hkerner/Datasets/COCO/val2014"
+export CAPTIONING_EXISTING_CAPTIONS_DIR="/data/hkerner/btokas/DIC/data/new_models/no_masking"
+
 uv run --extra captioning python scripts/captioning/build/generate_captions_with_logprobs.py \
     --model_type "$MODEL_TYPE" --image_set "$IMAGE_SET" --max_len "$MAX_LEN"
