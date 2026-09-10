@@ -79,6 +79,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import pickle
 import sys
 from pathlib import Path
@@ -91,12 +92,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 
-COCO_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\COCO2014\val2014")
+# Both env-overridable (FTW's own `_ROOT` convention, notes/ftw_correlation_
+# investigation.md) -- the hardcoded defaults are this machine's own local
+# paths and will NOT resolve on any other machine, HPC included. On a new
+# host, set CAPTIONING_COCO_ROOT to wherever COCO2014/val2014 lives there,
+# and CAPTIONING_EXISTING_CAPTIONS_DIR to wherever the 5 DIC no_masking
+# pickles (vit_gpt2/blip/florence/llava/bakllava.pkl) were copied -- that
+# directory is from a SEPARATE sibling repo (DIC), not part of CARDS at
+# all, so it must be transferred there explicitly, it won't come along
+# with a CARDS checkout.
+COCO_ROOT = Path(os.environ.get("CAPTIONING_COCO_ROOT", r"C:\Users\btokas\Projects\Datasets\COCO2014\val2014"))
 RESULTS_DIR = Path("results")
 CONCEPT_SETS_CSV = RESULTS_DIR / "captioning_bias_concept_sets.csv"
 MASKED_MANIFEST_CSV = RESULTS_DIR / "captioning_bias_masked_images_manifest.csv"
 OUT_DIR = RESULTS_DIR / "captioning_bias_captions"
-EXISTING_CAPTIONS_DIR = Path(r"C:\Users\btokas\Projects\DIC\data\new_models\no_masking")
+EXISTING_CAPTIONS_DIR = Path(os.environ.get(
+    "CAPTIONING_EXISTING_CAPTIONS_DIR", r"C:\Users\btokas\Projects\DIC\data\new_models\no_masking"))
 
 MODEL_NAMES = {
     "vit_gpt2": "nlpconnect/vit-gpt2-image-captioning",
