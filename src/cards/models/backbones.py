@@ -36,6 +36,10 @@ from cards.models.posthoc_cbm import cub_preprocess
 _IMAGENET_MEAN = [0.485, 0.456, 0.406]
 _IMAGENET_STD = [0.229, 0.224, 0.225]
 _CELEBA_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young.pt")
+_CELEBA_LOWRES_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_lowres.pt")
+# Standard (non-HQ) CelebA's own native img_align_celeba resolution
+# (width, height) -- the degrade target for the low-res variant below.
+_STANDARD_CELEBA_SIZE = (178, 218)
 
 
 @dataclass
@@ -96,6 +100,43 @@ def _celeba_preprocess() -> transforms.Compose:
     )
 
 
+def _load_celeba_attractive_young_lowres_native() -> nn.Module:
+    """train_attractive_young_classifier_lowres.py's own checkpoint --
+    identical architecture/task-head shape to
+    _load_celeba_attractive_young_native, trained instead on images first
+    degraded to standard CelebA's own native resolution (notes/
+    celeba_correlation_investigation.md's resolution-mismatch follow-up:
+    the original checkpoint only ever saw CelebA-HQ's re-derived
+    1024x1024 crops during training, a real train/eval mismatch when
+    evaluated on genuinely low-resolution images)."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 4)
+    state = torch.load(_CELEBA_LOWRES_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _celeba_lowres_preprocess() -> transforms.Compose:
+    """Degrades to standard CelebA's own native resolution BEFORE the
+    final 224x224 resize -- for a CelebA-HQ 1024x1024 source image, this
+    step permanently destroys the fine detail HQ's own super-resolution
+    added back, simulating what a genuinely low-resolution capture would
+    look like; for an already-low-res source image (standard CelebA's
+    own img_align_celeba, or anything similarly sized), the resize is
+    close to a no-op, falling through to the same final 224x224 pipeline
+    as _celeba_preprocess -- one consistent function, correct either way,
+    not two separate preprocessing paths to keep in sync."""
+    width, height = _STANDARD_CELEBA_SIZE
+    return transforms.Compose(
+        [
+            transforms.Resize((height, width)),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
+        ]
+    )
+
+
 def _load_resnet18_cub_native() -> nn.Module:
     from pytorchcv.model_provider import get_model as ptcv_get_model
 
@@ -134,6 +175,14 @@ BACKBONES: dict[str, BackboneSpec] = {
         hook_layer="layer4",
         load_native=_load_celeba_attractive_young_native,
         preprocess=_celeba_preprocess(),
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+    "celeba_attractive_young_lowres": BackboneSpec(
+        name="celeba_attractive_young_lowres",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_celeba_attractive_young_lowres_native,
+        preprocess=_celeba_lowres_preprocess(),
         feature_extractor=_resnet18_feature_extractor,
     ),
 }

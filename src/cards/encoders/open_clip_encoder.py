@@ -63,3 +63,36 @@ class OpenClipEncoder(ImageTextEncoder):
             features = self.model.encode_image(pixels)
             chunks.append(F.normalize(features, dim=-1).cpu())
         return torch.cat(chunks, dim=0)
+
+    @torch.no_grad()
+    def encode_patches(self, image: Image.Image) -> torch.Tensor:
+        """Per-patch embeddings in the SAME space as encode_images, via
+        one of two architecture-specific tricks (both verified by direct
+        reconstruction against encode_image, cos=1.0):
+
+        - SigLIP (a timm-backed TimmModel under open_clip, `model.visual`
+          exposes `.trunk`): SigLIP pools through a learned nonlinear
+          AttentionPoolLatent (MAP head), not a CLS token + linear
+          projection -- a patch's raw pre-pool hidden state does NOT
+          live in the final embedding space. Fix: route each patch
+          through that SAME attn_pool as if it were the only token in a
+          length-1 sequence -- attention over one token is trivially
+          identity, so this deterministically yields a per-patch vector
+          in the exact final space.
+        - Plain open_clip ViT (CLIP, open_clip_h -- `attn_pool=None`,
+          `pool_type='tok'`): exposes a genuinely separate LINEAR
+          `visual.proj` applied after `visual.ln_post`. Since `ln_post`
+          applies elementwise to every token (not just the pooled one)
+          BEFORE pooling, applying `proj` directly to patch tokens is
+          architecturally EXACT here -- no attn_pool trick needed.
+        """
+        pixels = self.preprocess(image.convert("RGB")).unsqueeze(0).to(self.device)
+        visual = self.model.visual
+        if hasattr(visual, "trunk"):
+            feats = visual.trunk.forward_features(pixels)  # (1, N, C)
+            per_patch = visual.trunk.attn_pool(feats[0].unsqueeze(1))  # (N, C)
+        else:
+            feats = visual.transformer(visual._embeds(pixels))
+            ln = visual.ln_post(feats)  # (1, N+1, C) -- index 0 is the CLS token
+            per_patch = ln[0, 1:] @ visual.proj  # (N, C)
+        return F.normalize(per_patch, dim=-1).cpu()
