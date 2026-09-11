@@ -136,11 +136,24 @@ def load_original_items() -> list[tuple[str, str, Path, int]]:
 
 
 def load_masked_items() -> list[tuple[str, str, Path, int]]:
-    """(img_name, concept_name, path, image_id=-1) for all 6,353 masked-manifest rows."""
+    """(img_name, concept_name, path, image_id=-1) for all 6,353 masked-manifest rows.
+
+    `masked_path` was written by `build_captioning_masked_images.py` on
+    Windows (`str(masked_path)`), which bakes in backslash separators --
+    fine on Windows, but on Linux/HPC backslash is just an ordinary
+    filename character, not a separator, so `Path(row["masked_path"])`
+    there resolves to a single nonexistent file literally named with
+    backslashes in it. Confirmed directly as the root cause of EVERY
+    "masked" image_set job failing on HPC while "original" jobs (whose
+    path is built fresh from COCO_ROOT + a bare filename, never read
+    from this CSV) succeeded. Normalizing backslash -> forward-slash
+    here is a no-op on Windows and fixes it on Linux -- forward slash is
+    a valid separator on both.
+    """
     items = []
     with open(MASKED_MANIFEST_CSV, newline="") as f:
         for row in csv.DictReader(f):
-            items.append((row["img_name"], row["concept_name"], Path(row["masked_path"]), -1))
+            items.append((row["img_name"], row["concept_name"], Path(row["masked_path"].replace("\\", "/")), -1))
     return items
 
 
@@ -396,6 +409,15 @@ def main():
                       f"(failed={n_failed})", end="", flush=True)
             if not image_path.exists():
                 n_failed += 1
+                # Previously silent -- gave zero signal beyond the final
+                # summary count when every image failed to resolve (e.g.
+                # backslash-separator paths breaking on Linux while
+                # working fine on Windows, caught directly on HPC). Print
+                # the first few in full, then rate-limit so a systematic
+                # path bug is obvious in .out immediately rather than only
+                # inferable after the whole job finishes.
+                if n_failed <= 3 or n_failed % 500 == 0:
+                    print(f"\n[{img_name}/{concept_name}] image not found: {image_path}", flush=True)
                 continue
             try:
                 image = Image.open(image_path).convert("RGB")

@@ -45,7 +45,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from cards.attribution.localization import localize_concept, threshold_mask
 from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.captioning_bias import groundable_concepts, load_bias_captioning_records
 from cards.pipeline import instantiate_encoder
 from cards.validation.broden_faithfulness import mask_region
@@ -133,8 +138,14 @@ def main():
             n_saved += 1
 
             manifest_rows.append({
+                # .as_posix() (forward slashes), not str() (native separator --
+                # backslash on Windows) -- this manifest gets read on Linux/HPC
+                # too, where a literal backslash is just a filename character,
+                # not a separator; confirmed directly as the root cause of every
+                # "masked" image-generation job failing there while "original"
+                # jobs (whose path never round-trips through this CSV) succeeded.
                 "img_name": img_name, "concept_name": concept_name,
-                "original_path": str(image_path), "masked_path": str(masked_path),
+                "original_path": image_path.as_posix(), "masked_path": masked_path.as_posix(),
                 "selected_strategy": selected_strategy, "angle_degrees": best_angle,
             })
 
