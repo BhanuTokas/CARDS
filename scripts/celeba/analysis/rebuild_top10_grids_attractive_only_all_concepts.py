@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from local_attribution_plot_utils import build_image_grid_clean
 
-from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS  # noqa: E402  (after sys.path insert)
+from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 
 RESULTS_DIR = Path("results")
 OUT_DIR = RESULTS_DIR / "local_attribution_top10_attractive_only"
