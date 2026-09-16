@@ -37,6 +37,8 @@ _IMAGENET_MEAN = [0.485, 0.456, 0.406]
 _IMAGENET_STD = [0.229, 0.224, 0.225]
 _CELEBA_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young.pt")
 _CELEBA_LOWRES_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_lowres.pt")
+_CELEBA_MALE_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_male.pt")
+_CELEBA_OFFICIAL_TRAIN_CKPT = Path("trained_models_new/celeba/resnet18_official_train_attractive_male.pt")
 # Standard (non-HQ) CelebA's own native img_align_celeba resolution
 # (width, height) -- the degrade target for the low-res variant below.
 _STANDARD_CELEBA_SIZE = (178, 218)
@@ -82,6 +84,42 @@ def _load_celeba_attractive_young_native() -> nn.Module:
     model = resnet18(weights=None)
     model.fc = nn.Linear(model.fc.in_features, 4)
     state = torch.load(_CELEBA_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _load_celeba_attractive_young_male_native() -> nn.Module:
+    """Extends the original Phase 1 checkpoint with a 3rd task, Male,
+    prompted directly ("Can we extend to add Male to our analysis?" ->
+    "Extend existing checkpoint") -- `train_attractive_young_male_
+    classifier.py`'s own fresh training run, a 3-task 6-way-logit head
+    ([0:2]=Attractive, [2:4]=Young, [4:6]=Male), same architecture and
+    the SAME train/val split as the original 2-task checkpoint (only
+    Male's own labels are new). Saved to a DIFFERENT checkpoint file
+    (resnet18_attractive_young_male.pt) -- the original 2-task
+    checkpoint is untouched, so every historical result in this track
+    stays reproducible against it."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 6)
+    state = torch.load(_CELEBA_MALE_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _load_celeba_official_train_native() -> nn.Module:
+    """`train_official_celeba_classifier.py`'s own checkpoint -- trained
+    on standard CelebA's OFFICIAL train partition (162,770 images),
+    NOT CelebAMask-HQ's 25,500-image curated split every other CelebA
+    checkpoint in this track used, prompted directly ("Can we train a
+    classifier on the CelebA official train set and see if it holds the
+    same pattern?"). 2-task 4-way-logit head ([0:2]=Attractive,
+    [2:4]=Male -- Young dropped per direct instruction). Images are
+    genuinely native low-resolution captures, so uses the SAME plain
+    `_celeba_preprocess` as the original checkpoint, not the HQ-
+    degradation trick `_celeba_lowres_preprocess` needed."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 4)
+    state = torch.load(_CELEBA_OFFICIAL_TRAIN_CKPT, map_location="cpu")
     model.load_state_dict(state)
     return model.eval()
 
@@ -183,6 +221,22 @@ BACKBONES: dict[str, BackboneSpec] = {
         hook_layer="layer4",
         load_native=_load_celeba_attractive_young_lowres_native,
         preprocess=_celeba_lowres_preprocess(),
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+    "celeba_attractive_young_male": BackboneSpec(
+        name="celeba_attractive_young_male",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_celeba_attractive_young_male_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+    "celeba_official_train_attractive_male": BackboneSpec(
+        name="celeba_official_train_attractive_male",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_celeba_official_train_native,
+        preprocess=_celeba_preprocess(),
         feature_extractor=_resnet18_feature_extractor,
     ),
 }
