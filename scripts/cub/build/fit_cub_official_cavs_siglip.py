@@ -38,11 +38,11 @@ import torch.nn.functional as F
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 sys.path.insert(0, "../post_hoc_cbm")
 
-from omegaconf import OmegaConf  # noqa: E402
+from concepts.concept_utils import learn_concept_bank
+from data import get_concept_loaders
+from omegaconf import OmegaConf
 
-from cards.pipeline import instantiate_encoder  # noqa: E402
-from concepts.concept_utils import learn_concept_bank  # noqa: E402
-from data import get_concept_loaders  # noqa: E402
+from cards.pipeline import instantiate_encoder
 
 OUT_DIR = Path("trained_concepts_new/cub_official/siglip")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

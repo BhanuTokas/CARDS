@@ -98,6 +98,18 @@ def mask_region(
       region's own real (dark, if imperfectly so) pixel values are
       closest in RGB space to zero_fill's own fill color, maximizing
       contrast instead.
+    - "noise_then_blur": the same Gaussian noise draw as
+      "zero_fill_noise" (needs the same `rng`), then Gaussian-blurred
+      (same `blur_sigma` as "blur") -- targets a gap neither "blur" nor
+      "zero_fill_noise" close on its own. Plain "blur" leaks the
+      region's own real low-frequency content (CUB v61: 75-90% of the
+      original mean color survives); "zero_fill_noise" erases content
+      completely but is sharp, high-frequency texture unlike anything a
+      real photographic region looks like. Blurring random noise erases
+      the original content just as completely while leaving a smooth,
+      photographically-plausible-looking patch instead of visible static
+      -- content-free without the flatness/sharpness confounds either
+      single strategy carries alone.
     """
     if mask.shape != (image.height, image.width):
         raise ValueError(f"mask shape {mask.shape} doesn't match image size {(image.height, image.width)}")
@@ -115,6 +127,12 @@ def mask_region(
             raise ValueError("strategy='zero_fill_noise' requires an rng (np.random.Generator) for the noise draw")
         noise = rng.normal(loc=0.0, scale=noise_std, size=(image.height, image.width, 3))
         filled = Image.fromarray(np.clip(noise, 0, 255).astype(np.uint8), mode="RGB")
+    elif strategy == "noise_then_blur":
+        if rng is None:
+            raise ValueError("strategy='noise_then_blur' requires an rng (np.random.Generator) for the noise draw")
+        noise = rng.normal(loc=0.0, scale=noise_std, size=(image.height, image.width, 3))
+        noise_img = Image.fromarray(np.clip(noise, 0, 255).astype(np.uint8), mode="RGB")
+        filled = noise_img.filter(ImageFilter.GaussianBlur(radius=blur_sigma))
     elif strategy == "hue_shift":
         h, s, v = image.convert("HSV").split()
         shift = round(hue_shift_degrees / 360.0 * 256.0)
@@ -125,6 +143,86 @@ def mask_region(
 
     mask_img = Image.fromarray((mask.astype(np.uint8) * 255), mode="L")
     return Image.composite(filled, image.convert("RGB"), mask_img)
+
+
+def mask_region_nir_band(
+    nir: np.ndarray, mask: np.ndarray, strategy: str = "blur",
+    blur_sigma: float = 20.0, noise_std_frac: float = 0.08,
+    zero_value: float | None = None, white_value: float | None = None,
+    mean_value: float | None = None, rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """Single-band analog of `mask_region`, for FTW/PRUE's 4th (NIR)
+    channel -- built for ConceptMask's FTW experiment (Section 4.5 of the
+    CounterConcept paper replicated with masking instead of DDIM
+    generative perturbation), where the black box consumes 4-band
+    (R, G, B, NIR) imagery and the mask must be applied consistently
+    across all 4 channels, not just the 3 `mask_region` itself handles.
+
+    "hue_shift" has no NIR analog (a single reflectance band has no hue)
+    and is intentionally NOT one of this function's strategies -- callers
+    iterating DEFAULT_FILL_STRATEGIES for RGB+NIR should either skip
+    "hue_shift" for the NIR band specifically (leaving NIR unmasked for
+    that one candidate) or exclude "hue_shift" from the shared strategy
+    list entirely; this function raises on it rather than silently
+    guessing.
+
+    NIR value SCALE IS UNCONFIRMED as of writing -- FTW/Sentinel-2 NIR
+    could be 0-255 uint8, 0-1 normalized float, or raw ~0-10000 digital
+    numbers, and the right choice isn't knowable until the actual PRUE
+    preprocessing pipeline is in hand. Rather than hardcode a guessed
+    constant (the way `_IMAGENET_MEAN_RGB` hardcodes a real, confirmed
+    ImageNet statistic for RGB), zero_value/white_value/mean_value all
+    default to being DERIVED FROM `nir`'s own observed min/max/mean when
+    left unset -- correct regardless of scale, at the cost of being
+    per-image rather than a fixed dataset-level constant. Pass explicit
+    values once the real scale is confirmed, if a fixed constant turns
+    out to matter (as it did for RGB's zero_fill/white_fill, CUB v61).
+    """
+    if mask.shape != nir.shape:
+        raise ValueError(f"mask shape {mask.shape} doesn't match nir shape {nir.shape}")
+    if strategy == "hue_shift":
+        raise ValueError("hue_shift has no NIR-band analog -- see this function's own docstring")
+
+    orig_dtype = nir.dtype
+    nir = nir.astype(np.float64)
+    lo, hi = float(nir.min()), float(nir.max())
+    mean = float(nir.mean())
+
+    if strategy == "blur":
+        from scipy.ndimage import gaussian_filter
+        filled = gaussian_filter(nir, sigma=blur_sigma)
+    elif strategy == "mean_fill":
+        filled = np.full_like(nir, mean_value if mean_value is not None else mean)
+    elif strategy == "zero_fill":
+        filled = np.full_like(nir, zero_value if zero_value is not None else lo)
+    elif strategy == "white_fill":
+        filled = np.full_like(nir, white_value if white_value is not None else hi)
+    elif strategy == "zero_fill_noise":
+        if rng is None:
+            raise ValueError("strategy='zero_fill_noise' requires an rng (np.random.Generator) for the noise draw")
+        base = zero_value if zero_value is not None else lo
+        filled = base + rng.normal(loc=0.0, scale=noise_std_frac * (hi - lo), size=nir.shape)
+    elif strategy == "noise_then_blur":
+        from scipy.ndimage import gaussian_filter
+        if rng is None:
+            raise ValueError("strategy='noise_then_blur' requires an rng (np.random.Generator) for the noise draw")
+        base = zero_value if zero_value is not None else lo
+        noise = base + rng.normal(loc=0.0, scale=noise_std_frac * (hi - lo), size=nir.shape)
+        filled = gaussian_filter(noise, sigma=blur_sigma)
+    else:
+        raise ValueError(f"unknown strategy {strategy!r}")
+
+    # Clip before casting back to orig_dtype -- "zero_fill_noise"/"noise_then_blur"
+    # add zero-mean Gaussian noise around `base` (often the band's own near-zero
+    # minimum), so a real fraction of `filled` goes negative. Casting a negative
+    # float straight to an unsigned dtype (uint16 for FTW bands) WRAPS AROUND to
+    # a value near the dtype's max, not 0 -- confirmed directly (-5.0 -> 65531 for
+    # uint16) -- turning intended dark fill into near-max-brightness noise for
+    # those pixels. The RGB analog (`mask_region`, same file) already clips for
+    # these same strategies (`np.clip(noise, 0, 255).astype(np.uint8)`); this was
+    # a real omission here, not an intentional difference (caught by code review).
+    filled = np.clip(filled, 0, np.iinfo(orig_dtype).max) if np.issubdtype(orig_dtype, np.integer) else filled
+    return np.where(mask, filled, nir).astype(orig_dtype)
 
 
 def _area_matched_rectangle(mask: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -308,6 +406,8 @@ class AgreementResult:
     n_pairs: int
     spearman_rho: float
     spearman_p: float
+    pearson_r: float
+    pearson_p: float
 
 
 def score_method_agreement(
@@ -317,16 +417,20 @@ def score_method_agreement(
 ) -> AgreementResult | None:
     """Aggregates `delta_p` per unique (concept_number, predicted_class)
     pair across all Broden images sharing it (requiring >=
-    min_samples_per_pair images), Spearman-correlates against any
-    method's own (concept, class) -> importance score table.
-    `method_scores` is the common denominator: CARDS' raw_score, TCAV's
-    sign_count/magnitude, and PCBM's own weight are all reducible to
-    exactly this (concept, class) -> scalar shape, so one function scores
-    all three methods identically against the masking ground truth.
+    min_samples_per_pair images), correlates (both Spearman rank and
+    Pearson linear) against any method's own (concept, class) ->
+    importance score table. `method_scores` is the common denominator:
+    CARDS' raw_score, TCAV's sign_count/magnitude, and PCBM's own weight
+    are all reducible to exactly this (concept, class) -> scalar shape, so
+    one function scores all three methods identically against the masking
+    ground truth. Pearson is reported alongside Spearman (not instead of
+    it) -- it additionally assumes a linear relationship and is sensitive
+    to outlier magnitude in a way Spearman's rank-only comparison isn't,
+    so the two can legitimately disagree; report both rather than picking.
     Returns None if fewer than 3 pairs have both a faithfulness
     aggregate and a method score (too few for a meaningful correlation).
     """
-    from scipy.stats import spearmanr
+    from scipy.stats import pearsonr, spearmanr
 
     aggregated = _aggregate_faithfulness_pairs(faithfulness_records, method_scores, min_samples_per_pair)
 
@@ -336,8 +440,10 @@ def score_method_agreement(
     pairs = list(aggregated.keys())
     x = [aggregated[p] for p in pairs]
     y = [method_scores[p] for p in pairs]
-    rho, p = spearmanr(x, y)
-    return AgreementResult(n_pairs=len(pairs), spearman_rho=float(rho), spearman_p=float(p))
+    rho, sp_p = spearmanr(x, y)
+    r, pe_p = pearsonr(x, y)
+    return AgreementResult(n_pairs=len(pairs), spearman_rho=float(rho), spearman_p=float(sp_p),
+                            pearson_r=float(r), pearson_p=float(pe_p))
 
 
 @dataclass

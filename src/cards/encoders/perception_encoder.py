@@ -94,3 +94,18 @@ class PerceptionEncoder(ImageTextEncoder):
             features = self.model.encode_image(pixels, normalize=True)
             chunks.append(features.cpu())
         return torch.cat(chunks, dim=0)
+
+    @torch.no_grad()
+    def encode_patches(self, image: Image.Image) -> torch.Tensor:
+        """Per-patch embeddings in the same space as encode_images. PE-
+        Core pools via its own AttentionPooling (pool_type='attn'), but
+        -- like the plain open_clip ViT case in OpenClipEncoder -- ALSO
+        exposes a separate linear `visual.proj` applied after its own
+        `ln_post` (via the model's public `forward_features(norm=True)`
+        helper), so patch tokens can bypass the attention pool entirely:
+        architecturally exact, not an approximation."""
+        pixels = self.preprocess(image.convert("RGB")).unsqueeze(0).to(self.device)
+        visual = self.model.visual
+        patch_tokens = visual.forward_features(pixels, norm=True, strip_cls_token=True)[0]  # (N, C)
+        per_patch = patch_tokens @ visual.proj
+        return torch.nn.functional.normalize(per_patch, dim=-1).cpu()

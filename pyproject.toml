@@ -74,6 +74,9 @@ imagenet = [
 tcav = [
     "captum>=0.7",
 ]
+ftw = [
+    "rasterio>=1.4.4",
+]
 
 [dependency-groups]
 dev = [

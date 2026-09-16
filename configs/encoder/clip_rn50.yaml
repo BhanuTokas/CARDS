@@ -1,0 +1,13 @@
+# CLIP ResNet50 (OpenAI weights) -- the paper's own "CLIP-ResNet50" PCBM
+# backbone (Yuksekgonul et al. 2023), not part of the standard Step 2
+# encoder ablation (see clip.yaml, a ViT-B-32). Plain "RN50" (not the
+# quickgelu-corrected variant) to match this exact checkpoint's own prior
+# use in this codebase (scripts/cub/run/train_pcbm_clip_concepts_cub.py,
+# CUB v54) -- open_clip logs a quick_gelu-activation mismatch warning
+# against the "openai" pretrained tag either way; harmless, not fixed
+# here to keep this backbone byte-for-byte comparable to that precedent.
+name: clip_rn50
+_target_: cards.encoders.open_clip_encoder.OpenClipEncoder
+model_name: RN50
+pretrained: openai
+device: ${device}

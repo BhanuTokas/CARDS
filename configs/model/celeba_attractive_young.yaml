@@ -1,0 +1,10 @@
+# CelebA Attractive/Young black-box model (Steps 6-7) -- the fine-tuned
+# ResNet18 classifier scripts/celeba/build/train_attractive_young_
+# classifier.py produced (trained_models_new/celeba/
+# resnet18_attractive_young.pt), wrapped as a CARDS BlackBoxModel.
+# task_name selects which of the checkpoint's 2 tasks this run explains;
+# override per attribution run, e.g. model.task_name=Young.
+name: celeba_attractive_young
+_target_: cards.models.celeba_black_box.CelebaAttractiveYoungBlackBox
+task_name: Attractive
+device: ${device}
