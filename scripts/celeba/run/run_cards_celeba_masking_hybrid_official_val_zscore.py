@@ -38,6 +38,7 @@ orthogonalize=True, K=50, SigLIP, the same 7-strategy fill family.
 from __future__ import annotations
 
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -72,8 +73,8 @@ from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 from cards.retrieval.retrieve import retrieve_top_bottom_k
 from cards.validation.broden_faithfulness import mask_region
 
-CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
-CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
+CELEBA_HQ_ROOT = Path(os.environ.get("CELEBA_HQ_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ"))
+CELEBA_ROOT = Path(os.environ.get("CELEBA_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebA\celeba"))
 RESULTS_DIR = Path("results")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50

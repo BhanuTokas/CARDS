@@ -24,7 +24,7 @@ export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install
 set -euo pipefail
 
 # ---- must match the Attractive job's CELEBA_ROOT exactly ----
-export CELEBA_ROOT=/data/hkerner/btokas/Datasets/CelebA/celeba   # TODO: confirm -- must contain img_align_celeba/, list_attr_celeba.txt, list_eval_partition.txt
+export CELEBA_ROOT=/data/hkerner/Datasets/CelebA/celeba   # confirmed 2026-09-17 -- must contain img_align_celeba/, list_attr_celeba.txt, list_eval_partition.txt
 export CARDS_CKPT_DIR=trained_models_new/celeba                 # relative to repo root, same as local
 export CARDS_RESULTS_DIR=results                                # relative to repo root, same as local
 export CARDS_NUM_WORKERS=8                                       # matches -c 8 above
