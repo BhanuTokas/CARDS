@@ -38,6 +38,7 @@ excluded and why" discipline as EXCLUDED_ATTRIBUTES in
 
 from __future__ import annotations
 
+import os
 import pickle
 from pathlib import Path
 
@@ -73,7 +74,10 @@ FEMININE_WORDS: list[str] = [
     "wife", "actress", "princess", "waitress", "she", "her", "hers",
 ]
 
-_PKL_PATH = Path(r"C:\Users\btokas\Projects\DIC\bias_data\Human_Ann\gender_obj_cap_mw_entries.pkl")
+_PKL_PATH = Path(os.environ.get(
+    "CAPTIONING_BIAS_PKL_PATH",
+    r"C:\Users\btokas\Projects\DIC\bias_data\Human_Ann\gender_obj_cap_mw_entries.pkl",
+))
 
 
 def load_bias_captioning_records(path: Path = _PKL_PATH) -> list[dict]:

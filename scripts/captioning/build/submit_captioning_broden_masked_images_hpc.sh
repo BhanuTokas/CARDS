@@ -38,6 +38,15 @@ set -euo pipefail
 # that same path's PARENT, assumed to also contain train2014/ alongside
 # val2014/ -- not yet directly verified on Sol).
 export CAPTIONING_COCO2014_ROOT=/data/hkerner/Datasets/COCO
+# Confirmed directly (real FileNotFoundError on Sol before this was set):
+# DIC is a sibling checkout at /data/hkerner/btokas/DIC, matching the
+# local machine's own relative layout (DIC/bias_data/Human_Ann/...).
+# This env var didn't exist before -- src/cards/data/captioning_bias.py's
+# own _PKL_PATH was hardcoded to a local Windows path with no override,
+# never exercised on HPC until this job (generate_captions_with_logprobs.py
+# reads the concept_sets.csv/manifest CSVs instead of this raw pickle
+# directly, so this gap was never hit before).
+export CAPTIONING_BIAS_PKL_PATH=/data/hkerner/btokas/DIC/bias_data/Human_Ann/gender_obj_cap_mw_entries.pkl
 export CARDS_RESULTS_DIR=results
 export CARDS_CACHE_DIR=embedding_cache
 
