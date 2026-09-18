@@ -14,10 +14,18 @@
 # Builds the Broden-concept masked-image set + manifest for the
 # captioning-bias track (build_captioning_broden_masked_images.py) --
 # SigLIP-only (retrieval + patch-similarity localization + masking), no
-# transformers/VLM deps, so a plain `uv run` (no `--extra captioning`)
-# is enough, unlike generate_captions_with_logprobs.py's own submission
-# script. Caption generation for these masked images (the actual VLM
-# forward passes) is a SEPARATE later step, not part of this job.
+# transformers/VLM deps, so `--extra captioning` (generate_captions_with_
+# logprobs.py's own extra) is NOT needed. `--extra pcbm-training` IS
+# needed though, confirmed directly by a real ModuleNotFoundError on Sol
+# ("No module named 'pandas'"): this script's `from data.constants import
+# BRODEN_CONCEPTS` still runs post_hoc_cbm's `data/__init__.py` first (a
+# package's __init__ always runs on any submodule import), which imports
+# concept_loaders.py, which imports pandas -- transitively required even
+# though this script only wants one path constant, not concept_loaders.py
+# itself. pandas lives behind CARDS' own `pcbm-training` extra (pyproject.
+# toml), not the default dependency set. Caption generation for these
+# masked images (the actual VLM forward passes) is a SEPARATE later step,
+# not part of this job.
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -50,4 +58,4 @@ if [ ! -d ../post_hoc_cbm ]; then
     exit 1
 fi
 
-uv run python scripts/captioning/build/build_captioning_broden_masked_images.py
+uv run --extra pcbm-training python scripts/captioning/build/build_captioning_broden_masked_images.py
