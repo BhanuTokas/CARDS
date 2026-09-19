@@ -1,0 +1,2 @@
+/data/hkerner/btokas/CARDS_caption/.venv/lib64/python3.11/site-packages/transformers/generation/configuration_utils.py:677: UserWarning: `num_beams` is set to 1. However, `early_stopping` is set to `True` -- this flag is only used in beam-based generation modes. You should set `num_beams>1` or unset `early_stopping`.
+  warnings.warn(

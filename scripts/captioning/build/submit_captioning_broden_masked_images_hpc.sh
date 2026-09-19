@@ -46,7 +46,7 @@ export CAPTIONING_COCO2014_ROOT=/data/hkerner/Datasets/COCO
 # never exercised on HPC until this job (generate_captions_with_logprobs.py
 # reads the concept_sets.csv/manifest CSVs instead of this raw pickle
 # directly, so this gap was never hit before).
-export CAPTIONING_BIAS_PKL_PATH=/data/hkerner/btokas/DIC/bias_data/Human_Ann/gender_obj_cap_mw_entries.pkl
+export CAPTIONING_BIAS_PKL_PATH=/data/hkerner/btokas/DIC/data/gender_obj_cap_mw_entries.pkl
 export CARDS_RESULTS_DIR=results
 export CARDS_CACHE_DIR=embedding_cache
 
