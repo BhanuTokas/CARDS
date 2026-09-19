@@ -4,7 +4,12 @@
 # FTW split). Submit with, e.g.:
 #   sbatch --export=MODEL_TYPE=blip,IMAGE_SET=original scripts/captioning/build/submit_caption_generation.sh
 #   sbatch --export=MODEL_TYPE=llava,IMAGE_SET=masked scripts/captioning/build/submit_caption_generation.sh
-# for each of the 5 models x 2 image sets (10 total jobs).
+#   sbatch --export=MODEL_TYPE=blip,IMAGE_SET=broden_masked scripts/captioning/build/submit_caption_generation.sh
+# for each of the 5 models x 3 image sets (15 total jobs) -- "broden_masked"
+# reads build_captioning_broden_masked_images.py's own manifest (170
+# Broden concepts, retrieval-based presence), added directly alongside
+# "original"/"masked" once that manifest existed, no script changes
+# needed beyond generate_captions_with_logprobs.py's own dispatch table.
 #
 # `cd "$SLURM_SUBMIT_DIR"` (not `dirname "$0"`) because SLURM copies the
 # submitted script into its own spool location before running it --

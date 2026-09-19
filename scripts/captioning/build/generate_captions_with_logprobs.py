@@ -105,6 +105,7 @@ COCO_ROOT = Path(os.environ.get("CAPTIONING_COCO_ROOT", r"C:\Users\btokas\Projec
 RESULTS_DIR = Path("results")
 CONCEPT_SETS_CSV = RESULTS_DIR / "captioning_bias_concept_sets.csv"
 MASKED_MANIFEST_CSV = RESULTS_DIR / "captioning_bias_masked_images_manifest.csv"
+BRODEN_MASKED_MANIFEST_CSV = RESULTS_DIR / "captioning_bias_broden_masked_images_manifest.csv"
 OUT_DIR = RESULTS_DIR / "captioning_bias_captions"
 EXISTING_CAPTIONS_DIR = Path(os.environ.get(
     "CAPTIONING_EXISTING_CAPTIONS_DIR", r"C:\Users\btokas\Projects\DIC\data\new_models\no_masking"))
@@ -152,6 +153,20 @@ def load_masked_items() -> list[tuple[str, str, Path, int]]:
     """
     items = []
     with open(MASKED_MANIFEST_CSV, newline="") as f:
+        for row in csv.DictReader(f):
+            items.append((row["img_name"], row["concept_name"], Path(row["masked_path"].replace("\\", "/")), -1))
+    return items
+
+
+def load_broden_masked_items() -> list[tuple[str, str, Path, int]]:
+    """Same shape/fix as `load_masked_items()` (img_name, concept_name,
+    masked_path, image_id=-1), reading `build_captioning_broden_masked_
+    images.py`'s own manifest instead -- the Broden-concept masked-image
+    set (170 concepts, retrieval-based presence, see that script's own
+    docstring) is a genuinely separate image_set from the 79-concept one,
+    not merged into MASKED_MANIFEST_CSV."""
+    items = []
+    with open(BRODEN_MASKED_MANIFEST_CSV, newline="") as f:
         for row in csv.DictReader(f):
             items.append((row["img_name"], row["concept_name"], Path(row["masked_path"].replace("\\", "/")), -1))
     return items
@@ -372,12 +387,13 @@ def load_done_keys(out_path: Path) -> set[tuple[str, str]]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", required=True, choices=sorted(MODEL_NAMES))
-    parser.add_argument("--image_set", required=True, choices=["original", "masked"])
+    parser.add_argument("--image_set", required=True, choices=["original", "masked", "broden_masked"])
     parser.add_argument("--max_len", type=int, default=200)
     parser.add_argument("--limit", type=int, default=None, help="cap on number of images, for smoke testing")
     args = parser.parse_args()
 
-    items = load_original_items() if args.image_set == "original" else load_masked_items()
+    item_loaders = {"original": load_original_items, "masked": load_masked_items, "broden_masked": load_broden_masked_items}
+    items = item_loaders[args.image_set]()
     if args.limit is not None:
         items = items[:args.limit]
 
