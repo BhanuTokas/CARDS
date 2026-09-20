@@ -1,4 +1,4 @@
-"""PCBM surrogate fit on the NEW official-train classifier, both tasks,
+"""PCBM surrogate fit on the official-train classifier, both tasks,
 prompted directly ("Do we also have results of PCBM and TCAV on this
 version of ground truth?"). Mirrors `train_pcbm_surrogate_celeba_male.
 py`'s own design (both known bug fixes: float32 cast before
@@ -7,10 +7,20 @@ function) but sources embeddings/surrogate-label images from standard
 CelebA's OFFICIAL train/val partitions (162,770 / 19,867 images)
 instead of CelebAMask-HQ's train_hq/val_hq -- matching what this
 classifier actually trained on.
+
+**Generalized to any official-train backbone** (`CARDS_BACKBONE_NAME`
+env var, default `celeba_official_train_attractive_male`), prompted
+directly ("The full pipeline with PCBM variants" for ViT-B/16 and
+ConvNeXt-Tiny) -- already used `spec.feature_extractor(native_model)`
+generically, so this only needed the backbone-name lookup, CAV-bank
+path, and output paths keyed by BACKBONE_NAME (matching `fit_celeba_
+official_train_cavs.py`'s own filename convention), so each
+architecture's surrogate never overwrites another's.
 """
 
 from __future__ import annotations
 
+import os
 import pickle
 import sys
 from pathlib import Path
@@ -25,10 +35,11 @@ sys.path.insert(0, "../post_hoc_cbm")
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 from cards.models.backbones import BACKBONES
 
-CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
-CONCEPT_BANK_PATH = ("trained_concepts_new/celeba_full/celeba_official_train_attractive_male/"
-                      "celeba_full_celeba_official_train_attractive_male_0.1_100.pkl")
-OUT_DIR = Path("trained_models_new/celeba_full/celeba_official_train_attractive_male")
+CELEBA_ROOT = Path(os.environ.get("CELEBA_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebA\celeba"))
+BACKBONE_NAME = os.environ.get("CARDS_BACKBONE_NAME", "celeba_official_train_attractive_male")
+CONCEPT_BANK_PATH = (Path(os.environ.get("CARDS_TRAINED_CONCEPTS_DIR", "trained_concepts_new/celeba_full")) /
+                      BACKBONE_NAME / f"celeba_full_{BACKBONE_NAME}_0.1_100.pkl")
+OUT_DIR = Path(os.environ.get("CARDS_TRAINED_MODELS_DIR", "trained_models_new/celeba_full")) / BACKBONE_NAME
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 64
@@ -82,7 +93,8 @@ def main():
     torch.manual_seed(SEED)
     np.random.seed(SEED)
 
-    spec = BACKBONES["celeba_official_train_attractive_male"]
+    print(f"BACKBONE_NAME={BACKBONE_NAME}  CONCEPT_BANK_PATH={CONCEPT_BANK_PATH}  OUT_DIR={OUT_DIR}", flush=True)
+    spec = BACKBONES[BACKBONE_NAME]
     native_model = spec.load_native().to(DEVICE).eval()
     feature_extractor = spec.feature_extractor(native_model).to(DEVICE).eval()
     preprocess = spec.preprocess
@@ -115,7 +127,7 @@ def main():
     train_emb = embed_images(train_files, feature_extractor, preprocess, DEVICE, "train")
     val_emb = embed_images(val_files, feature_extractor, preprocess, DEVICE, "val")
 
-    probe_layer = PosthocLinearCBM(concept_bank, backbone_name="celeba_official_train_attractive_male", n_classes=2).to(DEVICE)
+    probe_layer = PosthocLinearCBM(concept_bank, backbone_name=BACKBONE_NAME, n_classes=2).to(DEVICE)
     train_proj = probe_layer.compute_dist(torch.tensor(train_emb, device=DEVICE).float()).detach().cpu().numpy()
     val_proj = probe_layer.compute_dist(torch.tensor(val_emb, device=DEVICE).float()).detach().cpu().numpy()
 
@@ -138,7 +150,7 @@ def main():
         print(f"Native model's own true-label accuracy on val (informational): {native_true_label_acc_val:.4f}", flush=True)
 
         posthoc_layer = PosthocLinearCBM(
-            concept_bank, backbone_name="celeba_official_train_attractive_male",
+            concept_bank, backbone_name=BACKBONE_NAME,
             idx_to_class={0: f"not_{task_name}", 1: task_name}, n_classes=2,
         ).to(DEVICE)
 
@@ -163,7 +175,7 @@ def main():
         print(f"PCBM surrogate's fidelity to native model's predictions on val: {pcbm_native_fidelity:.4f}", flush=True)
 
         model_path = (OUT_DIR /
-                       f"pcbm_celeba_full__celeba_official_train_attractive_male__{task_name.lower()}__surrogate__seed_{SEED}__linear.ckpt")
+                       f"pcbm_celeba_full__{BACKBONE_NAME}__{task_name.lower()}__surrogate__seed_{SEED}__linear.ckpt")
         torch.save(posthoc_layer, model_path)
         print(f"Saved surrogate PCBM to {model_path}", flush=True)
         print(posthoc_layer.analyze_classifier(k=5), flush=True)
