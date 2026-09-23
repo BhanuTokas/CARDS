@@ -11,55 +11,37 @@ magnitude ranking would be structurally biased toward surfacing Male
 rows regardless of true concept relevance, the same kind of between-
 task artifact already flagged for the correlation number).
 
-One grid PER (concept, task) -- `{concept}_{task}.png` -- rather than
-cramming both tasks into a single taller image, so each grid stays a
-direct, readable comparison at the SAME 4-row shape as every other
-grid in this track (hybrid top-5, hybrid bottom-5, tcav top-5, tcav
-bottom-5).
+**Top-3/bottom-3, SIDE BY SIDE in one row per method** (not top-5/
+bottom-5 stacked as two separate rows) -- confirmed directly ("can we
+get the top and bottom 3 results, but side by side instead of on top
+of each other per method??"). Each method now gets exactly one row:
+3 top-ranked thumbnails, a vertical divider, then 3 bottom-ranked
+thumbnails -- 2 rows total per grid (hybrid, tcav) instead of 4.
+
+Both classes (Attractive AND Male) are already covered here -- TASKS
+includes both, one grid saved per (concept, task) pair, `{concept}_
+{task}.png`, so Male's own results are produced by this same run, not
+a separate pass.
 """
 
 from __future__ import annotations
 
 import csv
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+sys.path.insert(0, str(Path(__file__).parent))
+from local_attribution_plot_utils import build_presence_grid_clean
 
 RESULTS_DIR = Path("results")
 PRESENT_CSV = RESULTS_DIR / "local_attribution_celeba_official_train_pairs.csv"
 ABSENT_CSV = RESULTS_DIR / "local_attribution_celeba_official_train_absent_pairs.csv"
-OUT_DIR = RESULTS_DIR / "local_attribution_top5_bottom5_by_class_official_train"
+OUT_DIR = RESULTS_DIR / "local_attribution_top3_bottom3_by_class_official_train"
 METHODS = ["hybrid", "tcav"]
+METHOD_DISPLAY_NAMES = {"hybrid": "ConceptMask (Ours)", "tcav": "TCAV"}
 TASKS = ["Attractive", "Male"]
-N = 5
-
-
-def build_image_grid(rows: list[tuple[str, list[tuple[str, float, bool]]]], out_path: Path, thumb=128) -> None:
-    n_cols = max(len(images) for _, images in rows)
-    n_rows = len(rows)
-    pad, label_w, header_h, border = 4, 110, 20, 4
-    grid = Image.new("RGB", (label_w + n_cols * (thumb + pad), header_h + n_rows * (thumb + pad + header_h)), "white")
-    draw = ImageDraw.Draw(grid)
-    font = ImageFont.load_default()
-
-    for r, (row_label, images) in enumerate(rows):
-        y0 = header_h + r * (thumb + pad + header_h)
-        draw.text((2, y0), row_label, fill="black", font=font)
-        for c, (img_path, score, is_present) in enumerate(images):
-            x0 = label_w + c * (thumb + pad)
-            try:
-                thumb_img = Image.open(img_path).convert("RGB").resize((thumb, thumb))
-            except OSError:
-                thumb_img = Image.new("RGB", (thumb, thumb), "gray")
-            grid.paste(thumb_img, (x0, y0 + header_h))
-            border_color = "lime" if is_present else "red"
-            draw.rectangle([x0, y0 + header_h, x0 + thumb - 1, y0 + header_h + thumb - 1],
-                            outline=border_color, width=border)
-            sign_color = "cyan" if score >= 0 else "orange"
-            draw.text((x0, y0 + header_h + thumb - 12), f"{score:+.2f}", fill=sign_color, font=font)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    grid.save(out_path)
+N = 3
 
 
 def main():
@@ -87,13 +69,11 @@ def main():
             rows_for_grid = []
             for method_name in METHODS:
                 ranked = sorted(candidates[concept_name][task_name][method_name], key=lambda kv: -abs(kv[1]))
-                top5 = ranked[:N]
-                bottom5 = ranked[-N:]
-                n_top_present = sum(1 for _, _, present in top5 if present)
-                n_bottom_present = sum(1 for _, _, present in bottom5 if present)
-                rows_for_grid.append((f"{method_name} (top-5, {n_top_present}/5 present)", top5))
-                rows_for_grid.append((f"{method_name} (bottom-5, {n_bottom_present}/5 present)", bottom5))
-            build_image_grid(rows_for_grid, OUT_DIR / f"{concept_name}_{task_name}.png")
+                top_n = [(img, present) for img, _score, present in ranked[:N]]
+                bottom_n = [(img, present) for img, _score, present in ranked[-N:]]
+                rows_for_grid.append((METHOD_DISPLAY_NAMES[method_name], top_n, bottom_n))
+            title = f"{concept_name.replace('_', ' ')} — {task_name}"
+            build_presence_grid_clean(title, rows_for_grid, OUT_DIR / f"{concept_name}_{task_name}.png", n_per_block=N)
             n_saved += 1
     print(f"Saved {n_saved} per-(concept,class) grids to {OUT_DIR}/", flush=True)
 
