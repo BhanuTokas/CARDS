@@ -1,14 +1,22 @@
-"""Instrumented timing benchmark for PCBM's "CLIP concepts" variant
-(SigLIP), reusing train_pcbm_clip_concepts_celeba_official_train.py's
-exact pipeline at full production scale (162,770 train + 19,867 val =
-182,637 images). Reconstructed as a saved, HPC-runnable script, matching
-the original ad hoc benchmark's phase breakdown: list_files,
+"""Instrumented timing benchmark for PCBM's "CLIP concepts" variant,
+reusing train_pcbm_clip_concepts_celeba_official_train.py's exact
+pipeline at full production scale (162,770 train + 19,867 val = 182,637
+images). Reconstructed as a saved, HPC-runnable script, matching the
+original ad hoc benchmark's phase breakdown: list_files,
 full_train_val_embed (the dominant cost -- a full-dataset pass through
-SigLIP, REUSABLE across any black-box model built on any backbone, since
-concept vectors/image embeddings never depend on the classifier being
-explained), concept_projection, native_scoring (the classifier's own
-predictions, needed as surrogate training labels -- black-box-dependent),
-elastic_net_fit_x_tasks.
+the concept encoder, REUSABLE across any black-box model built on any
+backbone, since concept vectors/image embeddings never depend on the
+classifier being explained), concept_projection, native_scoring (the
+classifier's own predictions, needed as surrogate training labels --
+black-box-dependent), elastic_net_fit_x_tasks.
+
+**Takes the concept encoder as a CLI arg (siglip|clip_rn50)**, matching
+the real script's own BACKBONE_CFGS -- "CLIP-concepts" is a PCBM variant
+family, not one specific model ("Why does CLIP concepts and SIGLIP
+concepts have a single row? Are they not 2 different models?"): siglip is
+ViT-B-16-SigLIP (the only one previously benchmarked), clip_rn50 is CLIP's
+original RN50, a much smaller CNN that should have a very different cost
+profile despite belonging to the same PCBM variant.
 
 Uses a SINGLE lambda (not the real script's lam_candidates sweep) to match
 the original benchmark's own simpler, single-fit-per-task structure --
@@ -16,6 +24,8 @@ this benchmark measures the cost of producing ONE attribution set, not a
 hyperparameter search. Writes embeddings to a benchmark-specific cache
 path so a stale cache from a prior real run can't silently skip the
 full_train_val_embed phase and understate its cost.
+
+Usage: benchmark_computational_cost_pcbm_clip_concepts.py <siglip|clip_rn50>
 """
 
 from __future__ import annotations
@@ -48,7 +58,11 @@ SEED = 42
 BATCH_SIZE = 128
 TASKS = ["Attractive", "Male"]
 TASK_SLICES: dict[str, slice] = {"Attractive": slice(0, 2), "Male": slice(2, 4)}
-CLIP_BACKBONE_CFG = {"model_name": "ViT-B-16-SigLIP", "pretrained": "webli"}
+CLIP_BACKBONE_CFGS = {
+    "siglip": {"model_name": "ViT-B-16-SigLIP", "pretrained": "webli"},
+    "clip_rn50": {"model_name": "RN50", "pretrained": "openai"},
+}
+CLIP_BACKBONE_LABEL = {"siglip": "SigLIP", "clip_rn50": "CLIP-RN50"}
 
 
 def load_attr_names(path: Path) -> list[str]:
@@ -86,14 +100,19 @@ def native_task_logits(filenames: list[str], native_model, preprocess, device: s
 
 
 def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in CLIP_BACKBONE_CFGS:
+        raise SystemExit(f"Usage: {sys.argv[0]} <{'|'.join(CLIP_BACKBONE_CFGS)}>")
+    clip_backbone_name = sys.argv[1]
+    method_label = f"PCBM (CLIP-concepts, {CLIP_BACKBONE_LABEL[clip_backbone_name]})"
+
     RESULTS_DIR.mkdir(exist_ok=True)
     torch.manual_seed(SEED)
     np.random.seed(SEED)
-    print(f"BACKBONE_NAME={BACKBONE_NAME}  DEVICE={DEVICE}  CELEBA_ROOT={CELEBA_ROOT}", flush=True)
+    print(f"BACKBONE_NAME={BACKBONE_NAME}  clip_backbone={clip_backbone_name}  DEVICE={DEVICE}  CELEBA_ROOT={CELEBA_ROOT}", flush=True)
     timings: dict[str, float] = {}
 
-    cfg_dict = {"name": "siglip", "_target_": "cards.encoders.open_clip_encoder.OpenClipEncoder",
-                "device": DEVICE, **CLIP_BACKBONE_CFG}
+    cfg_dict = {"name": clip_backbone_name, "_target_": "cards.encoders.open_clip_encoder.OpenClipEncoder",
+                "device": DEVICE, **CLIP_BACKBONE_CFGS[clip_backbone_name]}
     encoder = instantiate_encoder(OmegaConf.create({"encoder": cfg_dict, "device": DEVICE}))
     query_texts = [CONCEPT_QUERY_TEXT[c] for c in GROUNDABLE_CONCEPTS]
     concept_vectors = encoder.encode_text(query_texts).to(DEVICE)
@@ -156,15 +175,15 @@ def main():
 
     timings["TOTAL"] = sum(timings.values())
 
-    print("\n=== Summary: PCBM (CLIP-concepts, SigLIP) ===", flush=True)
+    print(f"\n=== Summary: {method_label} ===", flush=True)
     for phase, secs in timings.items():
         print(f"  {phase:<28s} {secs:>10.2f}s")
 
-    out_path = RESULTS_DIR / "computational_cost_benchmark_pcbm_clip_concepts_full_scale.csv"
+    out_path = RESULTS_DIR / f"computational_cost_benchmark_pcbm_clip_concepts_{clip_backbone_name}_full_scale.csv"
     with open(out_path, "w") as f:
         f.write("method,phase,seconds\n")
         for phase, secs in timings.items():
-            f.write(f'"PCBM (CLIP-concepts, SigLIP)",{phase},{secs}\n')
+            f.write(f'"{method_label}",{phase},{secs}\n')
     print(f"\nSaved to {out_path}", flush=True)
 
 

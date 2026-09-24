@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cost_bench_pcbm_clip_concepts
+#SBATCH --job-name=cost_bench_pcbm_clip_concepts_siglip
 #SBATCH -G a100:1
 #SBATCH -c 8
 #SBATCH --mem 32G
@@ -7,16 +7,16 @@
 #SBATCH -q public
 #SBATCH -t 0-08:00:00   # local RTX 4090: full_train_val_embed (182,637 SigLIP encodes) + native_scoring totaled ~1648s;
                          # generous ceiling for a cold Sol node
-#SBATCH -o logs/cost_bench_pcbm_clip_concepts_%j.out
-#SBATCH -e logs/cost_bench_pcbm_clip_concepts_%j.err
+#SBATCH -o logs/cost_bench_pcbm_clip_concepts_siglip_%j.out
+#SBATCH -e logs/cost_bench_pcbm_clip_concepts_siglip_%j.err
 #
-# Runs scripts/celeba/analysis/benchmark_computational_cost_pcbm_clip_concepts.py:
-# PCBM (CLIP-concepts, SigLIP)'s row of the computational cost comparison,
-# at the same full scale as the other methods (results/computational_cost_
-# benchmark_full_scale.csv). Requires post_hoc_cbm as a SIBLING directory
-# to this repo (../post_hoc_cbm relative to CARDS root) and the
-# pcbm-training extra (pandas, imported transitively by train_pcbm.py's
-# own data/__init__.py).
+# Runs scripts/celeba/analysis/benchmark_computational_cost_pcbm_clip_concepts.py
+# siglip: PCBM (CLIP-concepts, SigLIP)'s row of the computational cost
+# comparison, at the same full scale as the other methods (results/
+# computational_cost_benchmark_full_scale.csv). Requires post_hoc_cbm as a
+# SIBLING directory to this repo (../post_hoc_cbm relative to CARDS root)
+# and the pcbm-training extra (pandas, imported transitively by
+# train_pcbm.py's own data/__init__.py).
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -39,4 +39,4 @@ if [ ! -d ../post_hoc_cbm ]; then
     exit 1
 fi
 
-uv run --extra pcbm-training python scripts/celeba/analysis/benchmark_computational_cost_pcbm_clip_concepts.py
+uv run --extra pcbm-training python scripts/celeba/analysis/benchmark_computational_cost_pcbm_clip_concepts.py siglip
