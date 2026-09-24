@@ -65,20 +65,6 @@ CLIP_BACKBONE_CFGS = {
 CLIP_BACKBONE_LABEL = {"siglip": "SigLIP", "clip_rn50": "CLIP-RN50"}
 
 
-def load_attr_names(path: Path) -> list[str]:
-    return path.read_text().splitlines()[1].split()
-
-
-def load_attr_labels(path: Path) -> dict[str, np.ndarray]:
-    result: dict[str, np.ndarray] = {}
-    for line in path.read_text().splitlines()[2:]:
-        if not line.strip():
-            continue
-        parts = line.split()
-        result[parts[0]] = np.array([v == "1" for v in parts[1:]], dtype=bool)
-    return result
-
-
 def encode_images_batched(encoder, filenames: list[str]) -> torch.Tensor:
     chunks = []
     for start in range(0, len(filenames), BATCH_SIZE):
@@ -119,8 +105,6 @@ def main():
     concept_norms_sq = (concept_vectors ** 2).sum(dim=1)
 
     t0 = time.perf_counter()
-    attr_names = load_attr_names(CELEBA_ROOT / "list_attr_celeba.txt")
-    attr_labels = load_attr_labels(CELEBA_ROOT / "list_attr_celeba.txt")
     partition = {}
     with open(CELEBA_ROOT / "list_eval_partition.txt") as f:
         for line in f:
@@ -168,7 +152,7 @@ def main():
             lam = single_lam
             alpha = 0.99
 
-        run_info, weights, bias = run_linear_probe(Args(), (train_proj, train_surrogate), (val_proj, val_surrogate))
+        run_info, _weights, _bias = run_linear_probe(Args(), (train_proj, train_surrogate), (val_proj, val_surrogate))
         print(f"  {task_name}: train fidelity={run_info['train_acc']:.2f}%  val fidelity={run_info['test_acc']:.2f}%", flush=True)
     timings["elastic_net_fit_x_tasks"] = time.perf_counter() - t0
     print(f"elastic_net_fit_x_tasks: {timings['elastic_net_fit_x_tasks']:.2f}s", flush=True)

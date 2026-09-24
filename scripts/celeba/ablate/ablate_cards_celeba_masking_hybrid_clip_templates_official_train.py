@@ -127,7 +127,7 @@ CONCEPT_NOUN_PHRASE: dict[str, str] = {
 # "a" -- e.g. "a big nose" -> "big nose", so "a photo of a {concept}" comes
 # out as "a photo of a big nose", not "a photo of a a big nose".
 CONCEPT_NOUN_PHRASE_BARE: dict[str, str] = {
-    c: phrase[2:] if phrase.startswith("a ") else phrase
+    c: phrase.removeprefix("a ")
     for c, phrase in CONCEPT_NOUN_PHRASE.items()
 }
 

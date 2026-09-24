@@ -47,10 +47,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 from cards.models.backbones import BACKBONES
-from cards.pipeline import instantiate_encoder, orthogonalize_queries, process_concept, score_masking_hybrid_concepts
+from cards.pipeline import (
+    instantiate_encoder,
+    orthogonalize_queries,
+    process_concept,
+    score_masking_hybrid_concepts,
+)
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 
 CELEBA_ROOT = Path(os.environ.get("CELEBA_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebA\celeba"))

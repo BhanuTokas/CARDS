@@ -204,7 +204,7 @@ def main():
             lam = 0.0002
             alpha = 0.99
 
-        run_info, weights, bias = run_linear_probe(Args(), (train_proj, train_surrogate), (val_proj, val_surrogate))
+        run_info, _weights, _bias = run_linear_probe(Args(), (train_proj, train_surrogate), (val_proj, val_surrogate))
         print(f"  {task_name}: train fidelity={run_info['train_acc']:.2f}%  val fidelity={run_info['test_acc']:.2f}%", flush=True)
     timings["elastic_net_fit_x_tasks"] = time.perf_counter() - t0
     print(f"elastic_net_fit_x_tasks: {timings['elastic_net_fit_x_tasks']:.2f}s", flush=True)
