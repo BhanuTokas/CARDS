@@ -3,6 +3,12 @@ combined.py` -- same combined present+absent |magnitude| retrieval
 grid, just pointed at the official-train classifier's own present/
 absent CSVs. See that script's own docstring for the full design
 rationale.
+
+Row label for the masking-hybrid method renamed "hybrid" -> "Hide and
+Seek" -- prompted directly ("I changed the name to Hide and Seek, so
+the name of the technique needs to be updated"). Superseded by the
+by-class version for actual current figures, but kept consistent here
+too in case this one gets rerun.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ PRESENT_CSV = RESULTS_DIR / "local_attribution_celeba_official_train_pairs.csv"
 ABSENT_CSV = RESULTS_DIR / "local_attribution_celeba_official_train_absent_pairs.csv"
 OUT_DIR = RESULTS_DIR / "local_attribution_top5_bottom5_combined_official_train"
 METHODS = ["hybrid", "tcav"]
+METHOD_DISPLAY_NAMES = {"hybrid": "Hide and Seek", "tcav": "tcav"}
 N = 5
 
 
@@ -73,8 +80,9 @@ def main():
             bottom5 = ranked[-N:]
             n_top_present = sum(1 for _, _, present in top5 if present)
             n_bottom_present = sum(1 for _, _, present in bottom5 if present)
-            rows_for_grid.append((f"{method_name} (top-5, {n_top_present}/5 present)", top5))
-            rows_for_grid.append((f"{method_name} (bottom-5, {n_bottom_present}/5 present)", bottom5))
+            method_label = METHOD_DISPLAY_NAMES[method_name]
+            rows_for_grid.append((f"{method_label} (top-5, {n_top_present}/5 present)", top5))
+            rows_for_grid.append((f"{method_label} (bottom-5, {n_bottom_present}/5 present)", bottom5))
         build_image_grid(rows_for_grid, OUT_DIR / f"{concept_name}.png")
     print(f"Saved combined top-5/bottom-5 grids to {OUT_DIR}/", flush=True)
 

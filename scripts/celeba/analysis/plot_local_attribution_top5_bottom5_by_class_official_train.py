@@ -39,7 +39,7 @@ PRESENT_CSV = RESULTS_DIR / "local_attribution_celeba_official_train_pairs.csv"
 ABSENT_CSV = RESULTS_DIR / "local_attribution_celeba_official_train_absent_pairs.csv"
 OUT_DIR = RESULTS_DIR / "local_attribution_top3_bottom3_by_class_official_train"
 METHODS = ["hybrid", "tcav"]
-METHOD_DISPLAY_NAMES = {"hybrid": "ConceptMask (Ours)", "tcav": "TCAV"}
+METHOD_DISPLAY_NAMES = {"hybrid": "Hide and Seek (Ours)", "tcav": "TCAV"}
 TASKS = ["Attractive", "Male"]
 N = 3
 

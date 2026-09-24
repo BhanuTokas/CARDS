@@ -25,6 +25,10 @@ Images from BOTH target tasks (Attractive, Young) are pooled into one
 per-concept ranking, matching the original top-10 script's own
 convention (not re-litigated here). `baseline` is excluded from the
 grid, same convention too -- ground_truth/hybrid/tcav only.
+
+Row label for the masking-hybrid method renamed "hybrid" -> "Hide and
+Seek" -- prompted directly ("I changed the name to Hide and Seek, so
+the name of the technique needs to be updated").
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ RESULTS_DIR = Path("results")
 PAIRS_CSV = RESULTS_DIR / "local_attribution_celeba_pairs_corrected_gt.csv"
 OUT_DIR = RESULTS_DIR / "local_attribution_top5_bottom5_by_magnitude"
 METHOD_COLUMN = {"ground_truth": "gt_delta_p", "hybrid": "hybrid_score", "tcav": "tcav_score"}
+METHOD_DISPLAY_NAMES = {"ground_truth": "ground_truth", "hybrid": "Hide and Seek", "tcav": "tcav"}
 N = 5
 
 
@@ -83,8 +88,9 @@ def main():
         rows_for_grid = []
         for method_name in METHOD_COLUMN:
             ranked = sorted(candidates[concept_name][method_name], key=lambda kv: -abs(kv[1]))
-            rows_for_grid.append((f"{method_name} (top-5)", ranked[:N]))
-            rows_for_grid.append((f"{method_name} (bottom-5)", ranked[-N:]))
+            method_label = METHOD_DISPLAY_NAMES[method_name]
+            rows_for_grid.append((f"{method_label} (top-5)", ranked[:N]))
+            rows_for_grid.append((f"{method_label} (bottom-5)", ranked[-N:]))
         build_image_grid(rows_for_grid, OUT_DIR / f"{concept_name}.png")
     print(f"Saved top-5/bottom-5 grids to {OUT_DIR}/", flush=True)
 

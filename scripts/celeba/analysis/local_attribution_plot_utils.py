@@ -13,6 +13,10 @@ Improvements, all purely cosmetic (same underlying data/ranking):
     the numeric score is not shown at all, sign conveyed by border color
     alone.
   - Consistent padding, light panel background per row, bold row labels.
+
+Row label for the masking-hybrid method renamed "ConceptMask (Ours)" ->
+"Hide and Seek (Ours)" -- prompted directly ("I changed the name to
+Hide and Seek, so the name of the technique needs to be updated").
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ _LABEL_COLOR = (30, 30, 30)
 
 _ROW_DISPLAY_NAMES = {
     "ground_truth": "Δp",
-    "hybrid": "ConceptMask (Ours)",
+    "hybrid": "Hide and Seek (Ours)",
     "tcav": "TCAV",
 }
 
