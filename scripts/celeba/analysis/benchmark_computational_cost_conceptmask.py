@@ -66,6 +66,16 @@ TASK_SLICE = {"Attractive": 1, "Male": 3}
 
 
 class TaskBlackBox:
+    """Wraps __call__ with an accumulating timer so scoring_all_concepts_x_tasks
+    can be split into encoder-side (retrieval, localization, perturbation
+    selection -- reusable across black-box models) vs black-box-dependent
+    (time actually spent inside the black box's own forward pass) without
+    touching masking_score/masking_mode internals ("What would be the
+    reusable vs. black box specific split here?").
+    """
+
+    total_call_seconds = 0.0
+
     def __init__(self, native_model, task_name: str, preprocess, device: str):
         self.model = native_model
         self.task_idx = TASK_SLICE[task_name]
@@ -77,7 +87,10 @@ class TaskBlackBox:
 
     @torch.no_grad()
     def __call__(self, batch: torch.Tensor) -> torch.Tensor:
-        return self.model(batch.to(self.device))[:, self.task_idx].detach().cpu()
+        t0 = time.perf_counter()
+        out = self.model(batch.to(self.device))[:, self.task_idx].detach().cpu()
+        TaskBlackBox.total_call_seconds += time.perf_counter() - t0
+        return out
 
 
 def build_raw_official_val_paths() -> list[Path]:
@@ -149,15 +162,24 @@ def main():
 
     timings["TOTAL"] = sum(timings.values())
 
+    black_box_seconds = TaskBlackBox.total_call_seconds
+    reusable_seconds = timings["TOTAL"] - black_box_seconds
+
     print("\n=== Summary: ConceptMask ===", flush=True)
     for phase, secs in timings.items():
         print(f"  {phase:<32s} {secs:>10.2f}s")
+    print(f"\n  black_box_calls (within scoring_all_concepts_x_tasks) {black_box_seconds:>10.2f}s", flush=True)
+    print(f"  reusable (encoder-side)                               {reusable_seconds:>10.2f}s", flush=True)
+    print(f"  black-box-dependent                                   {black_box_seconds:>10.2f}s", flush=True)
 
     out_path = RESULTS_DIR / "computational_cost_benchmark_conceptmask_full_scale.csv"
     with open(out_path, "w") as f:
         f.write("method,phase,seconds\n")
         for phase, secs in timings.items():
             f.write(f"ConceptMask,{phase},{secs}\n")
+        f.write(f"ConceptMask,black_box_calls,{black_box_seconds}\n")
+        f.write(f"ConceptMask,reusable_encoder_side,{reusable_seconds}\n")
+        f.write(f"ConceptMask,black_box_dependent,{black_box_seconds}\n")
     print(f"\nSaved to {out_path}", flush=True)
 
 

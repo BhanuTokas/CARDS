@@ -5,16 +5,18 @@
 #SBATCH --mem 32G
 #SBATCH -p public
 #SBATCH -q public
-#SBATCH -t 0-02:00:00   # local RTX 4090: full run (encoder_load+pool_embed+query_build+scoring, 26 concepts x 2 tasks) totaled ~320s
+#SBATCH -t 0-02:00:00   # local RTX 4090: full run (encoder_load+pool_embed+query_build+scoring, 26 concepts x 2 tasks, raw 19,867-image official-val pool) totaled ~349s
 #SBATCH -o logs/cost_bench_conceptmask_%j.out
 #SBATCH -e logs/cost_bench_conceptmask_%j.err
 #
 # Runs scripts/celeba/analysis/benchmark_computational_cost_conceptmask.py:
 # ConceptMask's row of the computational cost comparison, at the same full
 # scale as the other methods (results/computational_cost_benchmark_full_
-# scale.csv). Requires post_hoc_cbm as a SIBLING directory to this repo
-# (../post_hoc_cbm relative to CARDS root, only for shared retrieval utils
-# imported transitively via cards.pipeline).
+# scale.csv). No post_hoc_cbm dependency (neither cards.pipeline nor this
+# script imports from it) and no CelebAMask-HQ dependency (uses the RAW
+# official-val pool, not the HQ-overlap-excluded "clean" one -- see the
+# benchmark script's own docstring), so this runs on Sol with no extra
+# sibling-repo setup.
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
