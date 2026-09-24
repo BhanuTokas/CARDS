@@ -229,3 +229,5 @@ embedding_cache/
 *.pth
 trained_concepts_new/
 trained_models_new/
+scripts/captioning/
+scripts/coco_stuff/
