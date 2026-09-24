@@ -18,6 +18,18 @@ Does NOT score against ground truth (that's a separate, cheap, and
 already-covered analysis step elsewhere) -- this benchmark only measures
 the cost of PRODUCING attributions, matching what the other three methods'
 benchmarks measure.
+
+**Uses the RAW official-val pool, not the "clean" HQ-overlap-excluded one**
+("Why does it need CelebAMask-HQ?" -- run_cards_celeba_masking_hybrid_
+official_train.py's own build_clean_official_val_paths() excludes ~2,993
+images that also appear in CelebAMask-HQ's train/val splits, to avoid
+retrieval-pool/ground-truth leakage -- but that exclusion requires
+CelebAMask-HQ's own annotation files, which aren't available on Sol at
+all, making the reconstructed benchmark non-portable there. For a pure
+wall-clock cost benchmark this distinction doesn't matter: it only
+shrinks the pool by ~18% out of ~16,874 images, and cost is driven by
+pool SIZE, not which specific images are in it. Using the raw pool here
+removes the CelebAMask-HQ dependency entirely.
 """
 
 from __future__ import annotations
@@ -34,7 +46,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT
-from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
 
 from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
@@ -69,6 +80,16 @@ class TaskBlackBox:
         return self.model(batch.to(self.device))[:, self.task_idx].detach().cpu()
 
 
+def build_raw_official_val_paths() -> list[Path]:
+    paths = []
+    with open(CELEBA_ROOT / "list_eval_partition.txt") as f:
+        for line in f:
+            fname, part = line.split()
+            if part == "1":
+                paths.append(CELEBA_ROOT / "img_align_celeba" / fname)
+    return paths
+
+
 def main():
     RESULTS_DIR.mkdir(exist_ok=True)
     print(f"BACKBONE_NAME={BACKBONE_NAME}  DEVICE={DEVICE}  CELEBA_ROOT={CELEBA_ROOT}", flush=True)
@@ -90,14 +111,14 @@ def main():
     print(f"encoder_load: {timings['encoder_load']:.2f}s", flush=True)
 
     t0 = time.perf_counter()
-    official_paths = build_clean_official_val_paths()
+    official_paths = build_raw_official_val_paths()
     pairs = [(p, 0) for p in official_paths]
     timings["load_images_from_disk"] = time.perf_counter() - t0
     print(f"{len(pairs)} pool images (load_images_from_disk: {timings['load_images_from_disk']:.2f}s)", flush=True)
 
     t0 = time.perf_counter()
     pool_cfg = OmegaConf.create({"seed": 0, "device": DEVICE, "encoder": cfg.encoder, "cache_dir": str(CACHE_DIR)})
-    pool_cfg.dataset = {"name": "celeba_official_val_clean", "root": str(CELEBA_ROOT)}
+    pool_cfg.dataset = {"name": "celeba_official_val_raw", "root": str(CELEBA_ROOT)}
     pool_cfg.pool_source = "val"
     pool = load_or_build_pool(Path(pool_cfg.cache_dir), cache_key_for(pool_cfg), pairs, encoder)
     timings["pool_embed"] = time.perf_counter() - t0
