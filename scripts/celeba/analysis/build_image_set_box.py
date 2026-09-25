@@ -72,10 +72,20 @@ def main():
     rng.shuffle(shown_paths)
 
     n_cols, n_rows = 3, 2
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(9, 6.6))
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(9, 6.6),
+        gridspec_kw={"wspace": 0.05, "hspace": 0.04},
+    )
     for ax, path in zip(axes.flat, shown_paths):
         img = Image.open(path).convert("RGB")
-        ax.imshow(img)
+        # aspect="auto" fills the whole axes cell -- with the default
+        # "equal" aspect, imshow preserves each source photo's own pixel
+        # aspect ratio and letterboxes it inside the cell, so the visible
+        # gap between rows/columns is real hspace/wspace PLUS a variable
+        # per-image letterbox strip, making the vertical gap look larger
+        # and inconsistent even at hspace=0 -- prompted directly ("Reduce
+        # the vertical space, it looks weird").
+        ax.imshow(img, aspect="auto")
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
@@ -83,15 +93,20 @@ def main():
             spine.set_color("#999999")
             spine.set_linewidth(1.5)
 
-    plt.tight_layout(rect=[0.02, 0.02, 0.98, 0.85])
-    fig.suptitle("Image Set", fontsize=40, y=0.97)
+    # No in-figure title -- added separately in the main figure for font
+    # consistency (prompted directly: "can we just get rid of the name on
+    # top, I can add it in the main figure for font consistency"). Equal
+    # margins on all four sides + equal wspace/hspace above give evenly
+    # spaced images filling the whole box, replacing the old tight_layout
+    # call whose rect reserved an asymmetric top strip for the title.
+    fig.subplots_adjust(left=0.025, right=0.975, top=0.965, bottom=0.035)
 
-    # title-bar box: outer border + separator line under the title, matching the old box style
-    fig.canvas.draw()
-    outer = plt.Rectangle((0.015, 0.015), 0.97, 0.965, transform=fig.transFigure,
+    # outer border box, matching the old flowchart-panel style (title-bar
+    # separator line removed along with the title -- nothing left to
+    # separate it from)
+    outer = plt.Rectangle((0.015, 0.015), 0.97, 0.97, transform=fig.transFigure,
                            fill=False, edgecolor="black", linewidth=4, zorder=10)
     fig.add_artist(outer)
-    fig.add_artist(plt.Line2D([0.015, 0.985], [0.87, 0.87], transform=fig.transFigure, color="black", linewidth=4))
 
     fig.savefig(OUT_PATH, dpi=150)
     plt.close(fig)

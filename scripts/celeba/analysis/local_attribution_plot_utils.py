@@ -173,7 +173,7 @@ def build_presence_grid_clean(
         sub_y = y0 + line1_h + 2
         cell_y0 = y0 + row_h_label
 
-        draw.text((left_margin, sub_y), "Top-3 Present", fill=(90, 90, 90), font=sub_font)
+        draw.text((left_margin, sub_y), "Top-3", fill=(90, 90, 90), font=sub_font)
         for c, (img_path, _is_present) in enumerate(top_n):
             x0 = left_margin + c * (thumb + 2 * border + pad)
             _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _NEUTRAL_BORDER)
@@ -181,7 +181,7 @@ def build_presence_grid_clean(
         div_x = left_margin + block_w + divider_w // 2
         draw.line([(div_x, y0), (div_x, y0 + row_block_h - pad)], fill=_DIVIDER, width=2)
 
-        draw.text((bottom_x0_base, sub_y), "Top-3 Absent", fill=(90, 90, 90), font=sub_font)
+        draw.text((bottom_x0_base, sub_y), "Bottom-3", fill=(90, 90, 90), font=sub_font)
         for c, (img_path, _is_present) in enumerate(bottom_n):
             x0 = bottom_x0_base + c * (thumb + 2 * border + pad)
             _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _NEUTRAL_BORDER)

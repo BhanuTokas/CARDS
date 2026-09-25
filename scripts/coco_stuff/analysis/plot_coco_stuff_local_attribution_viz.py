@@ -32,6 +32,11 @@ attribution grids' own established convention, confirmed directly
 top-3/bottom-3 for consistency"). `TOP_BOTTOM_N` below is the single
 source of truth for both sections' slicing.
 
+**Row labels cleaned up** to "{method} (Top-3)"/"{method} (Bottom-3)"
+(was the lowercase, glued-on "{method} top3"/"{method} bottom3") --
+prompted directly ("Can you update the coco-stuff script as well
+please!"), matching the CelebA grids' own "Top-3"/"Bottom-3" cleanup.
+
 **Method renamed "CARDS"/"ConceptMask" -> "Hide and Seek"** throughout
 this file's rendered grid labels (internal dict keys/variable names
 still say "cards" -- only what's actually drawn on the grids changed),
@@ -48,6 +53,25 @@ and backprops ONLY that class's logit sum, returning a 1D sign array instead
 of the old [N, 20] array. This matters far more for the dominant-class section
 (103 concepts x every dominant-class image) than it did for VIZ_CASES (3
 concepts), which is why it's being made now rather than left as-is.
+
+**Renderer swapped to match the CelebA local-attribution grids exactly**
+(`scripts/celeba/analysis/local_attribution_plot_utils.build_presence_grid_
+clean`) -- prompted directly ("Will this create images formatted exactly
+like CelebA local attributions?" -> "No" -> "Yes, also this is in a
+different code base so let me know what all I need to change." ->
+"Can you give me the complete updated file?"). The old local
+`build_image_grid` (PIL default bitmap font, on-image cyan/orange score
+text, no border, flat stacked rows) is gone; `build_presence_grid_clean`
+is ported in verbatim below (TrueType fonts, bordered thumbnails, one row
+per method with Top-3/Bottom-3 blocks side by side, no numeric score
+shown) -- identical to CelebA's own except the font path, which points at
+a Linux TrueType location instead of CelebA's Windows one since this
+script runs on Sol HPC. **Verify `_FONT_REGULAR`/`_FONT_BOLD` actually
+exist on Sol before running** -- `fc-list | grep -i dejavu` (or `find /
+-iname 'DejaVuSans*.ttf' 2>/dev/null`) to confirm the path below is real;
+`_grid_font` falls back to PIL's tiny default bitmap font silently on
+`OSError` if it's wrong, which would quietly degrade every grid back to
+the old ugly look without erroring.
 """
 
 from __future__ import annotations
@@ -89,8 +113,9 @@ COCO_ROOT   = Path("/scratch/rnair21/LLMConceptEditing_old/coco")
 BRODEN_ROOT = Path("/scratch/rnair21/LLMConceptEditing_old/broden_concepts")
 CKPT_PATH   = Path("trained_models_new/coco_stuff/resnet18_coco_stuff.pt")
 RESULTS_DIR = Path("results/coco_stuff")
+FINAL_DIR = Path("/data/hkerner/btokas/CARDS/resulrs/coco_stuff/")
 COUNTS_CSV  = RESULTS_DIR / "coco_stuff_faithfulness_detection_counts.csv"
-VIZ_OUT_DIR = RESULTS_DIR / "local_attribution_viz"
+VIZ_OUT_DIR = FINAL_DIR / "local_attribution_viz"
 
 BRODEN_DROPPED_CONCEPTS: set[str] = {
     "air_conditioner", "apron", "awning", "bathroom_s", "beak", "bedroom_s",
@@ -131,6 +156,101 @@ VIZ_CASES: list[tuple[str, str]] = [
 # just an internal dict key, not shown anywhere) -- only the RENDERED grid
 # label goes through this map.
 METHOD_DISPLAY_NAMES = {"cards": "Hide and Seek (Ours)", "tcav": "TCAV"}
+
+
+# ---------------------------------------------------------------------------
+# Grid renderer -- ported verbatim from `scripts/celeba/analysis/
+# local_attribution_plot_utils.build_presence_grid_clean` so COCO-Stuff's
+# local-attribution grids are formatted identically to CelebA's own (see
+# module docstring's "Renderer swapped..." note for why). Only the font
+# path differs (Linux path for Sol HPC vs. CelebA's Windows one) --
+# VERIFY IT EXISTS ON SOL before trusting this, see module docstring.
+# ---------------------------------------------------------------------------
+_GRID_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
+_GRID_FONT_REGULAR = _GRID_FONT_DIR / "DejaVuSans.ttf"
+_GRID_FONT_BOLD = _GRID_FONT_DIR / "DejaVuSans-Bold.ttf"
+
+_GRID_BG = (250, 250, 250)
+_GRID_PANEL_BG = (255, 255, 255)
+_GRID_LABEL_COLOR = (30, 30, 30)
+_GRID_DIVIDER = (120, 120, 120)
+_GRID_NEUTRAL_BORDER = (60, 60, 60)
+
+
+def _grid_font(path: Path, size: int) -> ImageFont.FreeTypeFont:
+    try:
+        return ImageFont.truetype(str(path), size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _paste_bordered_thumb(
+    grid: Image.Image, draw: ImageDraw.ImageDraw, img_path: str,
+    x0: int, y0: int, thumb: int, border: int, color: tuple[int, int, int],
+) -> None:
+    draw.rectangle([x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1], outline=color, width=border)
+    try:
+        thumb_img = Image.open(img_path).convert("RGB").resize((thumb, thumb))
+    except OSError:
+        thumb_img = Image.new("RGB", (thumb, thumb), "gray")
+    grid.paste(thumb_img, (x0 + border, y0 + border))
+
+
+def build_presence_grid_clean(
+    rows: list[tuple[str, list[tuple[str, bool]], list[tuple[str, bool]]]],
+    out_path: Path,
+    thumb: int = 150,
+    n_per_block: int = 3,
+) -> None:
+    """rows: [(row_label, top_n[(image, is_present)], bottom_n[(image,
+    is_present)]), ...] -- one row per method, Top-N/Bottom-N blocks side
+    by side separated by a vertical divider. Border color is neutral gray
+    for every thumbnail (matches CelebA's own convention: presence/absence
+    is conveyed by which block -- Top vs. Bottom -- an image is in, not by
+    border color); no numeric score shown."""
+    n_rows = len(rows)
+    left_margin, pad, border = 10, 3, 4
+    line1_h, line2_h = 32, 26
+    row_h_label = line1_h + line2_h
+    cell_h = thumb + 2 * border
+    block_w = n_per_block * (thumb + 2 * border + pad)
+    divider_w = 18
+    row_block_h = row_h_label + cell_h + pad
+
+    width = left_margin + 2 * block_w + divider_w + pad
+    height = n_rows * row_block_h + pad
+
+    grid = Image.new("RGB", (width, height), _GRID_BG)
+    draw = ImageDraw.Draw(grid)
+
+    row_font = _grid_font(_GRID_FONT_BOLD, 24)
+    sub_font = _grid_font(_GRID_FONT_REGULAR, 19)
+
+    bottom_x0_base = left_margin + block_w + divider_w
+
+    for r, (row_label, top_n, bottom_n) in enumerate(rows):
+        y0 = r * row_block_h
+        draw.rectangle([0, y0, width, y0 + row_block_h - pad], fill=_GRID_PANEL_BG if r % 2 == 0 else _GRID_BG)
+        draw.text((left_margin, y0 + 4), row_label, fill=_GRID_LABEL_COLOR, font=row_font)
+
+        sub_y = y0 + line1_h + 2
+        cell_y0 = y0 + row_h_label
+
+        draw.text((left_margin, sub_y), "Top-3", fill=(90, 90, 90), font=sub_font)
+        for c, (img_path, _is_present) in enumerate(top_n):
+            x0 = left_margin + c * (thumb + 2 * border + pad)
+            _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _GRID_NEUTRAL_BORDER)
+
+        div_x = left_margin + block_w + divider_w // 2
+        draw.line([(div_x, y0), (div_x, y0 + row_block_h - pad)], fill=_GRID_DIVIDER, width=2)
+
+        draw.text((bottom_x0_base, sub_y), "Bottom-3", fill=(90, 90, 90), font=sub_font)
+        for c, (img_path, _is_present) in enumerate(bottom_n):
+            x0 = bottom_x0_base + c * (thumb + 2 * border + pad)
+            _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _GRID_NEUTRAL_BORDER)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    grid.save(out_path)
 
 
 # ---------------------------------------------------------------------------
@@ -333,42 +453,6 @@ def _cards_score(
 
 
 # ---------------------------------------------------------------------------
-# Visualization
-# ---------------------------------------------------------------------------
-
-def build_image_grid(
-    rows: list[tuple[str, list[tuple[str, float]]]],
-    out_path: Path,
-    thumb: int = 128,
-) -> None:
-    n_cols   = max(len(imgs) for _, imgs in rows)
-    pad      = 4
-    label_w  = 110
-    header_h = 20
-    w = label_w + n_cols * (thumb + pad)
-    h = header_h + len(rows) * (thumb + pad + header_h)
-    grid = Image.new("RGB", (w, h), "white")
-    draw = ImageDraw.Draw(grid)
-    font = ImageFont.load_default()
-
-    for r, (row_label, imgs) in enumerate(rows):
-        y0 = header_h + r * (thumb + pad + header_h)
-        draw.text((2, y0), row_label, fill="black", font=font)
-        for c, (img_path, score) in enumerate(imgs):
-            x0 = label_w + c * (thumb + pad)
-            try:
-                thumb_img = Image.open(img_path).convert("RGB").resize((thumb, thumb))
-            except OSError:
-                thumb_img = Image.new("RGB", (thumb, thumb), "gray")
-            grid.paste(thumb_img, (x0, y0 + header_h))
-            color = "lime" if score >= 0 else "red"
-            draw.text((x0, y0 + header_h + thumb - 12), f"{score:+.2f}", fill=color, font=font)
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    grid.save(out_path)
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -554,11 +638,12 @@ def main() -> None:
         for method, entries in method_lists.items():
             method_label = METHOD_DISPLAY_NAMES[method]
             sd = sorted(entries, key=lambda x: x[1], reverse=True)
-            grid_rows.append((f"{method_label} top{TOP_BOTTOM_N}",    sd[:TOP_BOTTOM_N]))
-            grid_rows.append((f"{method_label} bottom{TOP_BOTTOM_N}", sd[-TOP_BOTTOM_N:][::-1]))
+            top_n    = [(p, False) for p, _score in sd[:TOP_BOTTOM_N]]
+            bottom_n = [(p, False) for p, _score in sd[-TOP_BOTTOM_N:][::-1]]
+            grid_rows.append((method_label, top_n, bottom_n))
         safe = f"{concept_name}_{cls_name.replace(' ', '_')}"
         out_path = VIZ_OUT_DIR / f"{safe}.png"
-        build_image_grid(grid_rows, out_path)
+        build_presence_grid_clean(grid_rows, out_path)
         print(f"  Saved {out_path}", flush=True)
 
     # ===========================================================================
@@ -632,14 +717,20 @@ def main() -> None:
             sd_cards  = sorted(dom_entries, key=lambda x: x[1], reverse=True)
             sd_tcav   = sorted(tcav_entries, key=lambda x: x[1], reverse=True)
             grid_rows = [
-                (f"{METHOD_DISPLAY_NAMES['cards']} top{TOP_BOTTOM_N}",    sd_cards[:TOP_BOTTOM_N]),
-                (f"{METHOD_DISPLAY_NAMES['cards']} bottom{TOP_BOTTOM_N}", sd_cards[-TOP_BOTTOM_N:][::-1]),
-                (f"{METHOD_DISPLAY_NAMES['tcav']} top{TOP_BOTTOM_N}",     sd_tcav[:TOP_BOTTOM_N]),
-                (f"{METHOD_DISPLAY_NAMES['tcav']} bottom{TOP_BOTTOM_N}",  sd_tcav[-TOP_BOTTOM_N:][::-1]),
+                (
+                    METHOD_DISPLAY_NAMES["cards"],
+                    [(p, False) for p, _s in sd_cards[:TOP_BOTTOM_N]],
+                    [(p, False) for p, _s in sd_cards[-TOP_BOTTOM_N:][::-1]],
+                ),
+                (
+                    METHOD_DISPLAY_NAMES["tcav"],
+                    [(p, False) for p, _s in sd_tcav[:TOP_BOTTOM_N]],
+                    [(p, False) for p, _s in sd_tcav[-TOP_BOTTOM_N:][::-1]],
+                ),
             ]
             safe     = f"{concept_name}_{cls_name.replace(' ', '_')}"
             out_path = dom_out_dir / f"{safe}.png"
-            build_image_grid(grid_rows, out_path)
+            build_presence_grid_clean(grid_rows, out_path)
             print(
                 f"  [{c_i + 1:>3d}/{len(scored_concepts)}] {concept_name:<25s} -> {out_path.name}",
                 flush=True,
