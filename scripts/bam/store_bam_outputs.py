@@ -5,9 +5,11 @@ step runs in its own environment and everything downstream reads its output.
 Preprocessing follows BAM's `attributions.py`.
 
 Always stores logits. Optionally stores the pooled embedding (PCBM's input),
-block_layer4 activations (TCAV's layer) and, given a target column, the
-gradient of that class's logit with respect to block_layer4 (TCAV's
-directional derivatives).
+activations of --layer (TCAV's layer, block_layer4 by default) and, given a
+target column, the gradient of that class's logit with respect to --layer
+(TCAV's directional derivatives). After block_layer4 the network is only
+pooling and a linear head, so its gradients are the same for every input of a
+class; block_layer3 avoids that.
 """
 
 import argparse
@@ -48,6 +50,8 @@ def main() -> None:
     parser.add_argument("--activations", action="store_true")
     parser.add_argument("--float16", action="store_true", help="Store activations as float16.")
     parser.add_argument("--grad-target-column", default=None)
+    parser.add_argument("--layer", default="block_layer4", choices=["block_layer3", "block_layer4"],
+                        help="Layer for --activations and gradients.")
     args = parser.parse_args()
 
     with open(args.manifest, newline="") as handle:
@@ -73,7 +77,7 @@ def main() -> None:
     with tf.compat.v1.Session(graph=graph) as sess:
         tf.compat.v1.saved_model.loader.load(sess, ["serve"], str(args.model_dir))
         input_tensor = graph.get_tensor_by_name("input_tensor:0")
-        block4 = graph.get_tensor_by_name("resnet_model/block_layer4:0")
+        block4 = graph.get_tensor_by_name(f"resnet_model/{args.layer}:0")
         tensors = {"logits": graph.get_tensor_by_name("resnet_model/final_dense:0")}
         if args.embeddings:
             tensors["embeddings"] = graph.get_tensor_by_name("resnet_model/Squeeze:0")

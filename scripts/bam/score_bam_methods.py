@@ -183,11 +183,12 @@ def main() -> None:
                 methods[f"HnS ({variant}, delta {measure}, minus {NULL_NAMES[null]})"] = (
                     hns_scores(args.bam_root, variant, measure, null=null) + (True,))
 
-    tcav_path = args.results_dir / "bam_tcav_scores.csv"
-    if tcav_path.exists():
-        with open(tcav_path, newline="") as handle:
-            S = {(r["model"], r["class"], r["concept"]): float(r["mean_sign_count"]) for r in csv.DictReader(handle)}
-        methods["TCAV (sign count)"] = (S, weighted_u(S, pi), True)
+    for sfx, name in (("", "TCAV (sign count)"), ("_block_layer3", "TCAV (sign count, block_layer3)")):
+        tcav_path = args.results_dir / f"bam_tcav_scores{sfx}.csv"
+        if tcav_path.exists():
+            with open(tcav_path, newline="") as handle:
+                S = {(r["model"], r["class"], r["concept"]): float(r["mean_sign_count"]) for r in csv.DictReader(handle)}
+            methods[name] = (S, weighted_u(S, pi), True)
 
     pcbm_path = args.results_dir / "bam_pcbm_scores.csv"
     if pcbm_path.exists():
@@ -199,7 +200,8 @@ def main() -> None:
             # The own-model variant's features differ between the two models.
             methods[f"PCBM ({variant})"] = (S, weighted_u(S, pi), variant != "own")
 
-    for fname, name in (("bam_concept_shap_scores.csv", "ConceptSHAP (Shapley, class logit)"),
+    for fname, name in (("bam_eac_scores.csv", "EAC (SAM segments, surrogate value on class probability)"),
+                        ("bam_concept_shap_scores.csv", "ConceptSHAP (Shapley, class logit)"),
                         ("bam_concept_sae_scores.csv", "ConceptSAE (latent contribution to logit)")):
         if (args.results_dir / fname).exists():
             with open(args.results_dir / fname, newline="") as handle:

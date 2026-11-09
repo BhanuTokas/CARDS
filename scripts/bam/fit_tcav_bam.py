@@ -5,13 +5,16 @@ Matches `run_tcav_celeba_official_train.py`: captum's DefaultClassifier fits
 each CAV (concept vs one of 6 random sets), the score is captum's sign count
 (share of inputs whose class-logit gradient has a positive dot product with the
 CAV), and 3 control CAVs (control vs control) give the null for a t-test.
-CAVs come from block_layer4, the same position as ResNet's layer4.
+CAVs come from --layer: block_layer4 (default), the same position as ResNet's
+layer4, or block_layer3. At block_layer4 only pooling and a linear head follow,
+so every input of a class has the same gradient and each CAV's sign count is
+exactly 0 or 1; block_layer3 gives input-dependent gradients.
 
-Inputs, under <bam-root>/baselines/:
+Inputs, under <bam-root>/baselines/ (<sfx> is empty for block_layer4, else _<layer>):
   tcav_sets.csv, tcav_inputs.csv          from sample_bam_concept_sets.py
-  tf/<model>_tcav_sets.npz                activations of every set image
-  tf/<model>_tcav_inputs.npz              gradients for that model's inputs
-Writes results/bam_tcav_scores.csv.
+  tf/<model>_tcav_sets<sfx>.npz           activations of every set image
+  tf/<model>_tcav_inputs<sfx>.npz         gradients for that model's inputs
+Writes results/bam_tcav_scores<sfx>.csv.
 """
 
 import argparse
@@ -49,7 +52,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bam-root", type=Path, default=Path(os.environ.get("BAM_ROOT", "../Datasets/BAM")))
     parser.add_argument("--results-dir", type=Path, default=Path(os.environ.get("CARDS_RESULTS_DIR", "results")))
+    parser.add_argument("--layer", default="block_layer4", choices=["block_layer3", "block_layer4"])
     args = parser.parse_args()
+    sfx = "" if args.layer == "block_layer4" else f"_{args.layer}"
     base = args.bam_root / "baselines"
     torch.manual_seed(SEED)
 
@@ -58,14 +63,14 @@ def main() -> None:
 
     out_rows = []
     for model, classes in CLASSES.items():
-        acts = np.load(base / "tf" / f"{model}_tcav_sets.npz")
+        acts = np.load(base / "tf" / f"{model}_tcav_sets{sfx}.npz")
         index = {name: i for i, name in enumerate(acts["files"])}
         activations = acts["activations"]
 
         def members(set_name: str) -> np.ndarray:
             return activations[[index[r["file"]] for r in set_rows if r["set"] == set_name]]
 
-        grads = np.load(base / "tf" / f"{model}_tcav_inputs.npz")
+        grads = np.load(base / "tf" / f"{model}_tcav_inputs{sfx}.npz")
         gradients, targets = grads["gradients"], grads["targets"]
 
         randoms = [members(f"random_{i}") for i in range(N_RANDOM)]
@@ -89,7 +94,7 @@ def main() -> None:
             print(f"{model} {concept}: done", flush=True)
 
     args.results_dir.mkdir(exist_ok=True)
-    out_path = args.results_dir / "bam_tcav_scores.csv"
+    out_path = args.results_dir / f"bam_tcav_scores{sfx}.csv"
     with open(out_path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(out_rows[0]))
         writer.writeheader()
