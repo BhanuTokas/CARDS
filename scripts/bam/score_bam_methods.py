@@ -62,27 +62,76 @@ def prediction_weights(bam_root: Path) -> dict:
     return pi
 
 
-def hns_scores(bam_root: Path, variant: str, measure: str) -> tuple:
-    """S[(model, class, concept)] and U[(model, concept)] for HnS."""
+SAME_IMAGE_NULLS = ("other", "other_excl", "other_stack", "other_excl_stack", "moved", "shape", "shape_matched")  # run_hns_bam_nulls.py
+NULL_NAMES = {"other": "other-concept null", "moved": "moved-mask null", "shape": "random-shape null",
+              "mixed": "mixed null", "shape_matched": "random-shape null, fill matched to the real mask", "other_excl": "other-concept null kept off the concept",
+              "other_stack": "other-concept null on the masked image",
+              "other_excl_stack": "other-concept null kept off the concept, on the masked image"}
+
+
+def null_deltas(bam_root: Path, variant: str, model: str, measure: str, original: dict, null: str = "other") -> dict:
+    """Mean change over each (concept, file)'s null images of one kind. A null
+    applied to HnS's masked image (base "masked") is measured from that image."""
+    hns_dir = bam_root / "hns" / variant
+    with open(hns_dir / f"{null}_null_manifest.csv", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    masked = load_logits(hns_dir / f"{model}_{null}_null.npz")
+    real = load_logits(hns_dir / f"{model}_masked.npz") if any(r.get("base") == "masked" for r in rows) else None
+    groups = defaultdict(list)
+    for row in rows:
+        if row.get("base") == "masked":
+            a = real[f"{row['concept']}__{Path(row['file']).stem}.png"][None]
+        else:
+            a = original[row["file"]][None]
+        b = masked[row["masked_file"]][None]
+        if measure == "prob":
+            a, b = softmax(a), softmax(b)
+        groups[row["concept"], row["file"]].append((a - b)[0])
+    return {key: np.mean(v, axis=0) for key, v in groups.items()}
+
+
+def hns_scores(bam_root: Path, variant: str, measure: str, null: str | None = None,
+               cohens_d: bool = False) -> tuple:
+    """S[(model, class, concept)] and U[(model, concept)] for HnS.
+
+    `null` picks a correction. A same-image null ("other", "moved", "shape")
+    subtracts from each image's change the mean change of that image's null
+    images; images with no null are left out. "mixed" subtracts the mean change
+    over all images retrieved for the other concepts (the pooled null from the
+    CelebA analysis; it is nearly the same for every concept). With `cohens_d`,
+    each score is mean / sd (ddof=1) of the per-image changes instead of the mean.
+    """
     with open(bam_root / "hns" / variant / "manifest.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
+    stat = (lambda x: x.mean() / x.std(ddof=1)) if cohens_d else (lambda x: x.mean())
     S, U = {}, {}
     for model, classes in MODELS.items():
         original = load_logits(bam_root / "logits" / f"{model}_composite.npz")
         masked = load_logits(bam_root / "hns" / variant / f"{model}_masked.npz")
+        nulls = null_deltas(bam_root, variant, model, measure, original, null) if null in SAME_IMAGE_NULLS else None
         by_concept = defaultdict(list)
         for row in rows:
             a = original[row["file"]][None]
             b = masked[row["masked_file"]][None]
             if measure == "prob":
                 a, b = softmax(a), softmax(b)
+            delta = (a - b)[0]
+            if nulls is not None:
+                if (row["concept"], row["file"]) not in nulls:
+                    continue
+                delta = delta - nulls[row["concept"], row["file"]]
             own = int(original[row["file"]].argmax())
-            by_concept[row["concept"]].append(((a - b)[0], own))
+            by_concept[row["concept"]].append((delta, own))
         for concept, items in by_concept.items():
             deltas = np.stack([d for d, _ in items])
+            owns = np.array([d[own] for d, own in items])
+            if null == "mixed":
+                rest = [it for c, its in by_concept.items() if c != concept for it in its]
+                deltas = deltas - np.mean([d for d, _ in rest], axis=0)
+                owns = owns - np.mean([d[own] for d, own in rest])
             for k, cls in enumerate(classes):
-                S[model, cls, concept] = float(deltas[:, k].mean())
-            U[model, concept] = float(np.mean([d[own] for d, own in items]))
+                S[model, cls, concept] = float(stat(deltas[:, k]))
+            U[model, concept] = float(stat(owns))
     return S, U
 
 
@@ -125,8 +174,14 @@ def main() -> None:
     for variant in sorted(p.name for p in (args.bam_root / "hns").iterdir() if p.is_dir()):
         if not (args.bam_root / "hns" / variant / "obj_masked.npz").exists():
             continue
+        nulls = [n for n in SAME_IMAGE_NULLS if (args.bam_root / "hns" / variant / f"scene_{n}_null.npz").exists()]
         for measure in ("prob", "logit"):
             methods[f"HnS ({variant}, delta {measure})"] = hns_scores(args.bam_root, variant, measure) + (True,)
+            methods[f"HnS ({variant}, delta {measure}, Cohen's d)"] = (
+                hns_scores(args.bam_root, variant, measure, cohens_d=True) + (True,))
+            for null in nulls + ["mixed"]:
+                methods[f"HnS ({variant}, delta {measure}, minus {NULL_NAMES[null]})"] = (
+                    hns_scores(args.bam_root, variant, measure, null=null) + (True,))
 
     tcav_path = args.results_dir / "bam_tcav_scores.csv"
     if tcav_path.exists():
@@ -143,6 +198,14 @@ def main() -> None:
                  for r in pcbm_rows if r["variant"] == variant}
             # The own-model variant's features differ between the two models.
             methods[f"PCBM ({variant})"] = (S, weighted_u(S, pi), variant != "own")
+
+    for fname, name in (("bam_concept_shap_scores.csv", "ConceptSHAP (Shapley, class logit)"),
+                        ("bam_concept_sae_scores.csv", "ConceptSAE (latent contribution to logit)")):
+        if (args.results_dir / fname).exists():
+            with open(args.results_dir / fname, newline="") as handle:
+                S = {(r["model"], r["class"], r["concept"]): float(r["score"]) for r in csv.DictReader(handle)}
+            # Each model has its own concept vectors or latents, but both scores are in that model's logits.
+            methods[name] = (S, weighted_u(S, pi), True)
 
     summary, detail = [], []
     for name, (S, U, comparable) in methods.items():
@@ -162,7 +225,7 @@ def main() -> None:
                            "rank_in_own_class": ranks[FAMILY[concept], concept]})
 
     for row in summary:
-        print(f"{row['method']:<36s} {row['test']:<28s} {row['value']}")
+        print(f"{row['method']:<66s} {row['test']:<28s} {row['value']}")
     args.results_dir.mkdir(exist_ok=True)
     for fname, rows in (("bam_model_contrast_summary.csv", summary), ("bam_model_contrast_by_concept.csv", detail)):
         with open(args.results_dir / fname, "w", newline="") as handle:

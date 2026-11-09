@@ -46,6 +46,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--embeddings", action="store_true")
     parser.add_argument("--activations", action="store_true")
+    parser.add_argument("--float16", action="store_true", help="Store activations as float16.")
     parser.add_argument("--grad-target-column", default=None)
     args = parser.parse_args()
 
@@ -101,6 +102,8 @@ def main() -> None:
     for key in ("activations", "gradients"):
         if key in arrays:
             arrays[key] = arrays[key].reshape(len(names), -1)
+    if args.float16 and "activations" in arrays:
+        arrays["activations"] = arrays["activations"].astype(np.float16)
     if targets is not None:
         arrays["targets"] = targets
     args.out.parent.mkdir(parents=True, exist_ok=True)

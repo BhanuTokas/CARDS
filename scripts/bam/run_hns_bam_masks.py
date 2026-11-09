@@ -82,6 +82,38 @@ class RecordingBlackBox:
         return torch.zeros(batch.shape[0])
 
 
+def retrieve(bam_root: Path, cache_dir: Path, demean: bool) -> tuple:
+    """SigLIP encoder, BAM val pool and HnS's retrieval result per concept."""
+    val_dir = bam_root / "val"
+    with open(val_dir / "manifest.csv", newline="") as handle:
+        files = [row["file"] for row in csv.DictReader(handle)]
+    pairs = [(val_dir / "composite" / name, 0) for name in files]
+
+    encoder_cfg = {"name": "siglip", "_target_": "cards.encoders.open_clip_encoder.OpenClipEncoder",
+                   "model_name": "ViT-B-16-SigLIP", "pretrained": "webli", "device": DEVICE}
+    cfg = OmegaConf.create({
+        "seed": SEED, "device": DEVICE, "encoder": encoder_cfg, "cache_dir": str(cache_dir),
+        "retrieval": {"strategy": "naive"}, "k": K,
+        "masking_hybrid": {"threshold_method": "zscore", "alpha": ALPHA},
+    })
+    encoder = instantiate_encoder(cfg)
+
+    pool_cfg = OmegaConf.create({"seed": 0, "device": DEVICE, "encoder": encoder_cfg,
+                                 "dataset": {"name": "bam_val_composite"}, "pool_source": "val"})
+    pool = load_or_build_pool(cache_dir, cache_key_for(pool_cfg), pairs, encoder)
+    print(f"pool: {len(pool.paths)} images", flush=True)
+
+    queries = {c: build_concept_query(CONCEPT_QUERY_TEXT[c], encoder) for c in CONCEPTS}
+    if demean:
+        center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
+        queries = {c: demean_query(q, center) for c, q in queries.items()}
+    queries = orthogonalize_queries(queries)
+
+    results = [process_concept(cfg, encoder, pool, c, query=queries[c]) for c in CONCEPTS]
+    print("retrieval done", flush=True)
+    return encoder, pool, results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bam-root", type=Path, default=Path(os.environ.get("BAM_ROOT", "../Datasets/BAM")))
@@ -93,33 +125,7 @@ def main() -> None:
     val_dir = args.bam_root / "val"
     out_dir = args.bam_root / "hns" / f"demean_{args.demean}"
     (out_dir / "masked").mkdir(parents=True, exist_ok=True)
-
-    with open(val_dir / "manifest.csv", newline="") as handle:
-        files = [row["file"] for row in csv.DictReader(handle)]
-    pairs = [(val_dir / "composite" / name, 0) for name in files]
-
-    encoder_cfg = {"name": "siglip", "_target_": "cards.encoders.open_clip_encoder.OpenClipEncoder",
-                   "model_name": "ViT-B-16-SigLIP", "pretrained": "webli", "device": DEVICE}
-    cfg = OmegaConf.create({
-        "seed": SEED, "device": DEVICE, "encoder": encoder_cfg, "cache_dir": str(args.cache_dir),
-        "retrieval": {"strategy": "naive"}, "k": K,
-        "masking_hybrid": {"threshold_method": "zscore", "alpha": ALPHA},
-    })
-    encoder = instantiate_encoder(cfg)
-
-    pool_cfg = OmegaConf.create({"seed": 0, "device": DEVICE, "encoder": encoder_cfg,
-                                 "dataset": {"name": "bam_val_composite"}, "pool_source": "val"})
-    pool = load_or_build_pool(args.cache_dir, cache_key_for(pool_cfg), pairs, encoder)
-    print(f"pool: {len(pool.paths)} images", flush=True)
-
-    queries = {c: build_concept_query(CONCEPT_QUERY_TEXT[c], encoder) for c in CONCEPTS}
-    if demean:
-        center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
-        queries = {c: demean_query(q, center) for c, q in queries.items()}
-    queries = orthogonalize_queries(queries)
-
-    results = [process_concept(cfg, encoder, pool, c, query=queries[c]) for c in CONCEPTS]
-    print("retrieval done", flush=True)
+    encoder, pool, results = retrieve(args.bam_root, args.cache_dir, demean)
 
     rows = []
     for concept_idx, (concept, result) in enumerate(zip(CONCEPTS, results)):
