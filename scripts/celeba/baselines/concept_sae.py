@@ -8,7 +8,6 @@ Pre-set design (fixed before seeing any GT correlation):
   - Score(task, concept) = mean over clean-val images labelled with the concept of z_j(x) * (w_task . d_j): the exact
     contribution of that latent to the positive-class logit through the linear head. Variant: w_task . d_j alone."""
 import csv
-import os
 import sys
 from pathlib import Path
 
@@ -19,7 +18,10 @@ from scipy.stats import rankdata
 sys.path.insert(0, "src")
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 
-F = Path(os.environ.get("CARDS_FEAT_CACHE", "results/inpainting/feat_cache"))
+sys.path.insert(0, str(Path(__file__).parent))
+from black_boxes import FEAT_CACHE
+
+F = FEAT_CACHE
 OUT = Path(sys.argv[1]); DEV = "cuda"
 N_LAT, K, LR, BS, EPOCHS = 4096, 32, 4e-4, 4096, 60
 POS = {"Attractive": 1, "Male": 3}

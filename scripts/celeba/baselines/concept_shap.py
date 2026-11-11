@@ -15,7 +15,6 @@ Pre-set design (fixed before seeing any GT correlation):
     'shap_logit' = our signed adaptation: same Shapley procedure with value = mean positive-class logit over val images
     labelled with that concept."""
 import csv
-import os
 import sys
 from pathlib import Path
 
@@ -27,7 +26,10 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, "src")
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 
-F = Path(os.environ.get("CARDS_FEAT_CACHE", "results/inpainting/feat_cache"))
+sys.path.insert(0, str(Path(__file__).parent))
+from black_boxes import FEAT_CACHE
+
+F = FEAT_CACHE
 OUT = Path(sys.argv[1]); DEV = "cuda"
 M, BETA, LAM, TOPK, LR, BS, EPOCHS, N_PERM = 40, 0.2, 0.1, 32, 1e-3, 256, 10, 300
 POS = {"Attractive": 1, "Male": 3}
@@ -60,7 +62,7 @@ def main():
     names = pv["attr_names"]; ci = [names.index(c) for c in GROUNDABLE_CONCEPTS]
     P = patches(tr["maps"]).to(DEV); Lt = tr["logits"].to(DEV)
     yt = torch.stack([Lt[:, p - 1:p + 1].argmax(1) for p in POS.values()], 1)
-    model = CShap().to(DEV); opt = torch.optim.Adam(model.parameters(), lr=LR)
+    model = CShap(W.shape[1]).to(DEV); opt = torch.optim.Adam(model.parameters(), lr=LR)
     for ep in range(EPOCHS):
         perm = torch.randperm(len(P), device=DEV); tot = 0
         for s in range(0, len(P), BS):
