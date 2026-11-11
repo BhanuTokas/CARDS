@@ -214,6 +214,14 @@ def main():
         writer.writerow(["task", "concept_name", "weight"])
         writer.writerows(all_rows)
     print(f"\nSaved {len(all_rows)} rows to {out_path}")
+    # Same weights under the older name and header that score_all_methods_pooled_across_tasks_official_train.py
+    # and score_methods_against_strict_control_official_train.py read.
+    legacy_path = out_path.with_name(out_path.name.replace("_weights.csv", "_scores.csv"))
+    with open(legacy_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["target_task", "concept_name", "weight"])
+        writer.writerows(all_rows)
+    print(f"Saved {len(all_rows)} rows to {legacy_path}")
 
 
 if __name__ == "__main__":

@@ -251,6 +251,46 @@ def test_random_placements_empty_mask_returns_nothing():
     assert n_fallbacks == 0
 
 
+def test_random_placements_strict_never_exceeds_overlap_limit():
+    mask = np.zeros((32, 32), dtype=bool)
+    mask[:, :14] = True  # too wide to translate clear, but a square fits beside it
+    rng = np.random.default_rng(0)
+    placements, _ = random_placements(mask, rng, n_draws=5, strict=True)
+    assert placements
+    for p in placements:
+        assert (p & mask).sum() / p.sum() <= 0.1
+
+
+def test_random_placements_strict_drops_draws_when_nothing_fits():
+    mask = np.ones((32, 32), dtype=bool)
+    mask[0, 0] = False
+    rng = np.random.default_rng(0)
+    placements, n_fallbacks = random_placements(mask, rng, n_draws=5, max_attempts=5, strict=True)
+    assert placements == []
+    assert n_fallbacks == 1  # stops at the first draw with no valid placement
+
+
+def test_random_placements_strict_respects_exclude_masks():
+    mask = np.zeros((32, 32), dtype=bool)
+    mask[:4, :4] = True
+    other = np.zeros((32, 32), dtype=bool)
+    other[8:, :] = True
+    rng = np.random.default_rng(0)
+    placements, _ = random_placements(mask, rng, n_draws=5, exclude_masks=[other], strict=True)
+    for p in placements:
+        assert (p & other).sum() / p.sum() <= 0.1
+
+
+def test_random_placements_default_matches_with_strict_false():
+    mask = np.ones((32, 32), dtype=bool)
+    mask[0, 0] = False
+    implicit, _ = random_placements(mask, np.random.default_rng(3), n_draws=3, max_attempts=5)
+    explicit, _ = random_placements(mask, np.random.default_rng(3), n_draws=3, max_attempts=5, strict=False)
+    assert len(implicit) == 3  # the permissive fallback still fills every draw
+    for a, b in zip(implicit, explicit):
+        assert (a == b).all()
+
+
 # ---- _area_matched_rectangle ----
 
 
