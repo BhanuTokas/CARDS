@@ -159,15 +159,15 @@ def main():
             experimental_sets = [[target_concept, rc] for rc in random_concepts]
             scores = tcav.interpret(inputs=inputs, experimental_sets=experimental_sets, target=target_idx)
             target_sign_counts = [
-                scores[f"{target_concept.id}-{rc.id}"][spec.hook_layer]["sign_count"][0].item() for rc in random_concepts
+                scores[f"{target_concept.id}-{rc.id}"][layer]["sign_count"][0].item() for rc in random_concepts
             ]
             target_magnitudes = [
-                scores[f"{target_concept.id}-{rc.id}"][spec.hook_layer]["magnitude"][0].item() for rc in random_concepts
+                scores[f"{target_concept.id}-{rc.id}"][layer]["magnitude"][0].item() for rc in random_concepts
             ]
 
             control_scores = tcav.interpret(inputs=inputs, experimental_sets=control_sets, target=target_idx)
             control_sign_counts = [
-                control_scores[f"{a.id}-{b.id}"][spec.hook_layer]["sign_count"][0].item() for a, b in control_sets
+                control_scores[f"{a.id}-{b.id}"][layer]["sign_count"][0].item() for a, b in control_sets
             ]
 
             t_stat, p_value = ttest_ind(target_sign_counts, control_sign_counts)
