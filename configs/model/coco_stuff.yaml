@@ -1,0 +1,10 @@
+# COCO-Stuff 20-class ResNet18 classifier (Steps 6-7) -- trained by
+# scripts/coco_stuff/build/train_coco_stuff_classifier.py (binary BCE,
+# one head per class), wrapped as a CARDS BlackBoxModel.
+# task_name selects which of the 20 classes this run explains;
+# override per run: model.task_name="dining table"
+name: coco_stuff
+_target_: cards.models.coco_stuff_black_box.CocoStuffBlackBox
+task_name: wine glass
+checkpoint: trained_models_new/coco_stuff/resnet18_coco_stuff.pt
+device: ${device}

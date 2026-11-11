@@ -236,3 +236,5 @@ build_*icon.py
 build_*grid.py
 build_*figure.py
 build_*latex.py
+# Model weights
+weights/

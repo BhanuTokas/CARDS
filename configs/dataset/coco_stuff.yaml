@@ -1,0 +1,31 @@
+# COCO-Stuff pool: all val2017 images (~5k), labelled by 20 co-occurrence-bias
+# classes (Singh et al., 2020). Images with none of the 20 classes get label -1.
+#
+# Recommended invocation (masking_hybrid, SigLIP, 143 Broden concepts):
+#   uv run python scripts/coco_stuff/run/run_cards_coco_stuff_masking_hybrid.py
+#
+# The 20 class names below must match COCO's instances_val2017.json
+# categories[].name exactly -- verify before running.
+name: coco_stuff
+root: /scratch/rnair21/LLMConceptEditing_old/coco
+classes:
+  - wine glass
+  - cup
+  - fork
+  - knife
+  - spoon
+  - bowl
+  - pizza
+  - donut
+  - cake
+  - chair
+  - couch
+  - bed
+  - dining table
+  - toilet
+  - laptop
+  - mouse
+  - remote
+  - keyboard
+  - sink
+  - potted plant

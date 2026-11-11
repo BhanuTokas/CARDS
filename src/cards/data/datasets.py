@@ -166,6 +166,18 @@ def load_metadataset(
     ]
 
 
+def load_coco_stuff(
+    root: Path,
+    classes: list[str],
+    split: str = "val",
+) -> list[tuple[Path, int]]:
+    """All COCO images for `split`, labelled by the 20 co-occurrence-bias
+    classes. Delegates to cards.data.coco_stuff.load_coco_stuff_pairs."""
+    from cards.data.coco_stuff import load_coco_stuff_pairs
+
+    return load_coco_stuff_pairs(Path(root), classes, split)
+
+
 def list_broden_concepts(root: Path) -> list[str]:
     """Concept names available in the local Broden copy -- one subdirectory
     per concept, each already split into positives/ and negatives/."""

@@ -46,6 +46,9 @@ _CELEBA_MALE_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_ma
 _CELEBA_OFFICIAL_TRAIN_CKPT = Path("trained_models_new/celeba/resnet18_official_train_attractive_male.pt")
 _CELEBA_OFFICIAL_TRAIN_VIT_CKPT = Path("trained_models_new/celeba/vit_b_16_official_train_attractive_male.pt")
 _CELEBA_OFFICIAL_TRAIN_CONVNEXT_CKPT = Path("trained_models_new/celeba/convnext_tiny_official_train_attractive_male.pt")
+_COCO_STUFF_CKPT      = Path("trained_models_new/coco_stuff/resnet18_coco_stuff.pt")
+_COCO_STUFF_VIT_CKPT  = Path("trained_models_new/coco_stuff/vit_b_16_coco_stuff.pt")
+_COCO_STUFF_CNXT_CKPT = Path("trained_models_new/coco_stuff/convnext_tiny_coco_stuff.pt")
 # Standard (non-HQ) CelebA's own native img_align_celeba resolution
 # (width, height) -- the degrade target for the low-res variant below.
 _STANDARD_CELEBA_SIZE = (178, 218)
@@ -264,6 +267,31 @@ def _celeba_lowres_preprocess() -> transforms.Compose:
     )
 
 
+def _load_coco_stuff_native() -> nn.Module:
+    """train_coco_stuff_classifier.py's checkpoint -- 20-class BCE head,
+    same torchvision resnet18 architecture, `layer4`/`fc` still exposed
+    under those names."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 20)
+    state = torch.load(_COCO_STUFF_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _load_coco_stuff_vit_native() -> nn.Module:
+    model = vit_b_16(weights=None)
+    model.heads.head = nn.Linear(model.heads.head.in_features, 20)
+    model.load_state_dict(torch.load(_COCO_STUFF_VIT_CKPT, map_location="cpu"))
+    return model.eval()
+
+
+def _load_coco_stuff_convnext_native() -> nn.Module:
+    model = convnext_tiny(weights=None)
+    model.classifier[2] = nn.Linear(model.classifier[2].in_features, 20)
+    model.load_state_dict(torch.load(_COCO_STUFF_CNXT_CKPT, map_location="cpu"))
+    return model.eval()
+
+
 def _load_resnet18_cub_native() -> nn.Module:
     from pytorchcv.model_provider import get_model as ptcv_get_model
 
@@ -349,6 +377,30 @@ BACKBONES: dict[str, BackboneSpec] = {
         embed_dim=768,
         hook_layer="features.7",
         load_native=_load_celeba_official_train_convnext_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_convnext_feature_extractor,
+    ),
+    "coco_stuff": BackboneSpec(
+        name="coco_stuff",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_coco_stuff_native,
+        preprocess=_celeba_preprocess(),   # identical: Resize(224), ImageNet norm
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+    "coco_stuff_vit_b_16": BackboneSpec(
+        name="coco_stuff_vit_b_16",
+        embed_dim=768,
+        hook_layer="encoder.layers.encoder_layer_11",
+        load_native=_load_coco_stuff_vit_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_vit_feature_extractor,
+    ),
+    "coco_stuff_convnext_tiny": BackboneSpec(
+        name="coco_stuff_convnext_tiny",
+        embed_dim=768,
+        hook_layer="features.7",
+        load_native=_load_coco_stuff_convnext_native,
         preprocess=_celeba_preprocess(),
         feature_extractor=_convnext_feature_extractor,
     ),
