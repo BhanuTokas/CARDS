@@ -23,7 +23,6 @@ from scipy.ndimage import gaussian_filter, zoom
 sys.path.insert(0, "scripts/celeba/run"); sys.path.insert(0, "src")
 from run_cards_celeba_masking_hybrid_official_train import (
     ALPHA,
-    CELEBA_ROOT,
     CONCEPT_QUERY_TEXT,
     CONCEPT_TO_IDX,
     DEVICE,
@@ -32,6 +31,7 @@ from run_cards_celeba_masking_hybrid_official_train import (
     K,
     build_clean_official_val_paths,
 )
+from run_cards_celeba_masking_hybrid_official_val_zscore import CELEBA_ROOT
 
 from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
 from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES as FILLS
