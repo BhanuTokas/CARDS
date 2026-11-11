@@ -33,7 +33,12 @@ from run_cards_celeba_full import CONCEPT_QUERY_TEXT
 from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
 
 from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
@@ -162,7 +167,7 @@ def main():
     print(f"  perturbation generation (CPU, reusable):   {t_perturb_gen:8.2f}s", flush=True)
     print(f"  perturbation embedding (encoder-side, reusable): {t_perturb_embed:8.2f}s", flush=True)
     print(f"  angle/strategy selection (math, reusable): {t_angle_select:8.2f}s", flush=True)
-    print(f"  --------------------------------------------------", flush=True)
+    print("  --------------------------------------------------", flush=True)
     print(f"  TOTAL REUSABLE (encoder-side):              {reusable:8.2f}s", flush=True)
     print(f"  TOTAL BLACK-BOX-DEPENDENT (scoring calls):  {t_black_box:8.2f}s", flush=True)
     print(f"  sum check vs. wall total:                    {reusable + t_black_box:8.2f}s vs {t_total:8.2f}s",

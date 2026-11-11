@@ -24,7 +24,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "run"))
 
 from run_cards_celeba_full import CONCEPT_QUERY_TEXT
 
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.celeba import load_celebamask_hq_image_paths, split_celebamask_hq
 from cards.data.celeba_attributes import TARGET_CLASSES, load_attribute_labels, load_attribute_names
 from cards.pipeline import instantiate_encoder

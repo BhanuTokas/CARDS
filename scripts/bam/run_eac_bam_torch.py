@@ -19,7 +19,7 @@ import torch
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
-from bam_torch_model import CHANNEL_MEANS, load  # noqa: E402
+from bam_torch_model import CHANNEL_MEANS, load
 
 INPUT_SIZE = (224, 224)
 

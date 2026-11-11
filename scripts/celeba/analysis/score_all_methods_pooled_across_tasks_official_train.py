@@ -145,7 +145,7 @@ def main():
     r_att, r_male = PER_TASK_RHO["Attractive"], PER_TASK_RHO["Male"]
     plain_avg = (r_att + r_male) / 2
     fisher_avg = fisher_average([r_att, r_male], [26, 26])
-    n_pool, rho_pool, p_pool = pooled_rho(gt, cards_scores)
+    _n_pool, rho_pool, _p_pool = pooled_rho(gt, cards_scores)
     print(f"per-task: Attractive={r_att:+.4f}  Male={r_male:+.4f}", flush=True)
     print(f"plain average:        {plain_avg:+.4f}", flush=True)
     print(f"Fisher-z average:     {fisher_avg:+.4f}", flush=True)
@@ -159,7 +159,7 @@ def main():
         n_m, rho_m, _ = per_task_rho(gt, scores, "Male")
         plain = (rho_a + rho_m) / 2
         fisher = fisher_average([rho_a, rho_m], [n_a, n_m])
-        n_p, rho_p, p_p = pooled_rho(gt, scores)
+        _n_p, rho_p, p_p = pooled_rho(gt, scores)
         print(f"{name:<30s} {rho_a:>+11.4f} {rho_m:>+9.4f} {plain:>+9.4f} {fisher:>+10.4f} {rho_p:>+13.4f} {p_p:>10.4g}", flush=True)
 
 

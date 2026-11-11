@@ -29,9 +29,8 @@ from scipy.stats import ttest_ind
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).parent))
-from sample_bam_concept_sets import N_CONTROL, N_RANDOM, OBJECTS, SCENES  # noqa: E402
-
-from captum.concept._utils.classifier import DefaultClassifier  # noqa: E402
+from captum.concept._utils.classifier import DefaultClassifier
+from sample_bam_concept_sets import N_CONTROL, N_RANDOM, OBJECTS, SCENES
 
 SEED = 42
 CLASSES = {"obj": OBJECTS, "scene": SCENES}
@@ -67,7 +66,7 @@ def main() -> None:
         index = {name: i for i, name in enumerate(acts["files"])}
         activations = acts["activations"]
 
-        def members(set_name: str) -> np.ndarray:
+        def members(set_name: str, activations=activations, index=index) -> np.ndarray:
             return activations[[index[r["file"]] for r in set_rows if r["set"] == set_name]]
 
         grads = np.load(base / "tf" / f"{model}_tcav_inputs{sfx}.npz")

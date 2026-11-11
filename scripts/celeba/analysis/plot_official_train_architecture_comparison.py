@@ -25,7 +25,6 @@ script's own printed table).
 from __future__ import annotations
 
 import csv
-from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt

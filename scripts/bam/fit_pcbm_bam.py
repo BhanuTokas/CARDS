@@ -35,12 +35,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, os.environ.get("POST_HOC_CBM", "../post_hoc_cbm"))
 
-from concepts.concept_utils import get_cavs  # noqa: E402
-from run_hns_bam_masks import CONCEPT_QUERY_TEXT, CONCEPTS  # noqa: E402
-from sample_bam_concept_sets import OBJECTS, SCENES  # noqa: E402
-from train_pcbm import run_linear_probe  # noqa: E402
+from concepts.concept_utils import get_cavs
+from run_hns_bam_masks import CONCEPT_QUERY_TEXT, CONCEPTS
+from sample_bam_concept_sets import OBJECTS, SCENES
+from train_pcbm import run_linear_probe
 
-from cards.pipeline import instantiate_encoder  # noqa: E402
+from cards.pipeline import instantiate_encoder
 
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -163,7 +163,7 @@ def main() -> None:
             best = None
             for lam in lams:
                 Args.lam = lam
-                info, weights, bias = run_linear_probe(
+                info, weights, _bias = run_linear_probe(
                     Args(), (features[model, "train"], targets[model, "train"]),
                     (features[model, "val"], targets[model, "val"]))
                 print(f"  {model} lam={lam:.1e}: train fidelity {info['train_acc']:.2f}%, "
