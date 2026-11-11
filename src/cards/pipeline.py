@@ -36,7 +36,7 @@ from cards.concepts.prompts import (
     compute_text_center,
     demean_query,
 )
-from cards.data.datasets import load_celeba, load_cifar, load_cub, load_metadataset
+from cards.data.datasets import load_celeba, load_cifar, load_coco_stuff, load_cub, load_metadataset
 from cards.directions.estimate import ConceptDirection, estimate_direction
 from cards.directions.orthogonalize import lowdin_orthogonalize
 from cards.encoders.base import ImageTextEncoder, PatchLocalizableEncoder
@@ -86,6 +86,10 @@ def load_dataset_pool(cfg: DictConfig) -> list[tuple[Path, int]]:
     if name == "metadataset":
         return load_metadataset(
             Path(cfg.dataset.root), scenario=cfg.dataset.scenario, split=cfg.pool_source
+        )
+    if name == "coco_stuff":
+        return load_coco_stuff(
+            Path(cfg.dataset.root), classes=list(cfg.dataset.classes), split=cfg.pool_source
         )
     raise ValueError(
         f"dataset {name!r} isn't usable as a generic retrieval pool through this pipeline "

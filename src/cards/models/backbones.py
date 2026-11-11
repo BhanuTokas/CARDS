@@ -29,13 +29,20 @@ import torch
 from PIL import Image
 from torch import nn
 from torchvision import transforms
-from torchvision.models import ResNet18_Weights, resnet18
+from torchvision.models import ResNet18_Weights, convnext_tiny, resnet18, vit_b_16
 
 from cards.models.posthoc_cbm import cub_preprocess
 
 _IMAGENET_MEAN = [0.485, 0.456, 0.406]
 _IMAGENET_STD = [0.229, 0.224, 0.225]
 _CELEBA_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young.pt")
+_CELEBA_LOWRES_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_lowres.pt")
+_COCO_STUFF_CKPT      = Path("trained_models_new/coco_stuff/resnet18_coco_stuff.pt")
+_COCO_STUFF_VIT_CKPT  = Path("trained_models_new/coco_stuff/vit_b_16_coco_stuff.pt")
+_COCO_STUFF_CNXT_CKPT = Path("trained_models_new/coco_stuff/convnext_tiny_coco_stuff.pt")
+# Standard (non-HQ) CelebA's own native img_align_celeba resolution
+# (width, height) -- the degrade target for the low-res variant below.
+_STANDARD_CELEBA_SIZE = (178, 218)
 
 
 @dataclass
@@ -96,6 +103,102 @@ def _celeba_preprocess() -> transforms.Compose:
     )
 
 
+def _load_celeba_attractive_young_lowres_native() -> nn.Module:
+    """train_attractive_young_classifier_lowres.py's own checkpoint --
+    identical architecture/task-head shape to
+    _load_celeba_attractive_young_native, trained instead on images first
+    degraded to standard CelebA's own native resolution (notes/
+    celeba_correlation_investigation.md's resolution-mismatch follow-up:
+    the original checkpoint only ever saw CelebA-HQ's re-derived
+    1024x1024 crops during training, a real train/eval mismatch when
+    evaluated on genuinely low-resolution images)."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 4)
+    state = torch.load(_CELEBA_LOWRES_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _celeba_lowres_preprocess() -> transforms.Compose:
+    """Degrades to standard CelebA's own native resolution BEFORE the
+    final 224x224 resize -- for a CelebA-HQ 1024x1024 source image, this
+    step permanently destroys the fine detail HQ's own super-resolution
+    added back, simulating what a genuinely low-resolution capture would
+    look like; for an already-low-res source image (standard CelebA's
+    own img_align_celeba, or anything similarly sized), the resize is
+    close to a no-op, falling through to the same final 224x224 pipeline
+    as _celeba_preprocess -- one consistent function, correct either way,
+    not two separate preprocessing paths to keep in sync."""
+    width, height = _STANDARD_CELEBA_SIZE
+    return transforms.Compose(
+        [
+            transforms.Resize((height, width)),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
+        ]
+    )
+
+
+def _load_coco_stuff_native() -> nn.Module:
+    """train_coco_stuff_classifier.py's checkpoint -- 20-class BCE head,
+    same torchvision resnet18 architecture, `layer4`/`fc` still exposed
+    under those names."""
+    model = resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 20)
+    state = torch.load(_COCO_STUFF_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _load_coco_stuff_vit_native() -> nn.Module:
+    model = vit_b_16(weights=None)
+    model.heads.head = nn.Linear(model.heads.head.in_features, 20)
+    model.load_state_dict(torch.load(_COCO_STUFF_VIT_CKPT, map_location="cpu"))
+    return model.eval()
+
+
+def _vit_feature_extractor(native_model: nn.Module) -> nn.Module:
+    """ViT body up to (not including) the classification heads.
+
+    Wraps the native model so forward() returns the CLS-token embedding
+    [N, 768] — used for PCBM's concept-bottleneck input.  TCAV hooks
+    encoder.layers.encoder_layer_11 directly on the native model instead."""
+    class _ViTBody(nn.Module):
+        def __init__(self, vit: nn.Module) -> None:
+            super().__init__()
+            self._vit = vit
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = self._vit._process_input(x)
+            n = x.shape[0]
+            cls = self._vit.class_token.expand(n, -1, -1)
+            x = torch.cat([cls, x], dim=1)
+            x = self._vit.encoder(x)
+            return x[:, 0].unsqueeze(-1)   # [N, 768, 1] parallel to ResNet's [N, 512, 1]
+
+    return _ViTBody(native_model)
+
+
+def _load_coco_stuff_convnext_native() -> nn.Module:
+    model = convnext_tiny(weights=None)
+    model.classifier[2] = nn.Linear(model.classifier[2].in_features, 20)
+    model.load_state_dict(torch.load(_COCO_STUFF_CNXT_CKPT, map_location="cpu"))
+    return model.eval()
+
+
+def _convnext_feature_extractor(native_model: nn.Module) -> nn.Module:
+    """ConvNeXt-Tiny body: features + avgpool + LayerNorm2d + Flatten.
+
+    Drops only the final Linear so the output is a flat [N, 768] embedding."""
+    return nn.Sequential(
+        native_model.features,
+        native_model.avgpool,
+        native_model.classifier[0],   # LayerNorm2d(768)
+        native_model.classifier[1],   # Flatten
+    )
+
+
 def _load_resnet18_cub_native() -> nn.Module:
     from pytorchcv.model_provider import get_model as ptcv_get_model
 
@@ -135,5 +238,37 @@ BACKBONES: dict[str, BackboneSpec] = {
         load_native=_load_celeba_attractive_young_native,
         preprocess=_celeba_preprocess(),
         feature_extractor=_resnet18_feature_extractor,
+    ),
+    "celeba_attractive_young_lowres": BackboneSpec(
+        name="celeba_attractive_young_lowres",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_celeba_attractive_young_lowres_native,
+        preprocess=_celeba_lowres_preprocess(),
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+    "coco_stuff": BackboneSpec(
+        name="coco_stuff",
+        embed_dim=512,
+        hook_layer="layer4",
+        load_native=_load_coco_stuff_native,
+        preprocess=_celeba_preprocess(),   # identical: Resize(224), ImageNet norm
+        feature_extractor=_resnet18_feature_extractor,
+    ),
+    "coco_stuff_vit_b_16": BackboneSpec(
+        name="coco_stuff_vit_b_16",
+        embed_dim=768,
+        hook_layer="encoder.layers.encoder_layer_11",
+        load_native=_load_coco_stuff_vit_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_vit_feature_extractor,
+    ),
+    "coco_stuff_convnext_tiny": BackboneSpec(
+        name="coco_stuff_convnext_tiny",
+        embed_dim=768,
+        hook_layer="features.7",
+        load_native=_load_coco_stuff_convnext_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_convnext_feature_extractor,
     ),
 }
