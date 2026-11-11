@@ -1,8 +1,23 @@
-"""Masking-based faithfulness ground truth for the NEW official-train
+"""Masking-based faithfulness ground truth for the official-train
 classifier (`train_official_celeba_classifier.py`), prompted directly
 as part of "Can we train a classifier on the CelebA official train set
 and see if it holds the same pattern?" then "Can you create two ground
 truth versions with the non-overlapping and the previously used set."
+
+**Generalized to any official-train backbone** (`CARDS_BACKBONE_NAME`
+env var, default `celeba_official_train_attractive_male` -- the
+original ResNet18), prompted directly ("The full pipeline with PCBM
+variants" for the newly-trained ViT-B/16 and ConvNeXt-Tiny official-
+train classifiers). Previously hardcoded a ResNet18 construction
+directly (`load_official_train_native`/`official_train_preprocess`)
+instead of going through the `BACKBONES` registry the rest of this
+track's scripts already use -- refactored to `BACKBONES[BACKBONE_NAME]`
+so this works for any registered official-train backbone unchanged;
+the [0:2]=Attractive/[2:4]=Male 4-way-logit-head slicing convention is
+identical across all three architectures, only the backbone underneath
+differs. Output filenames get a model-name suffix derived from
+`BACKBONE_NAME` (empty for the original ResNet18, preserving the
+existing filenames exactly; `_vit`/`_convnext` for the new ones).
 
 Produces TWO versions, both scored through the SAME new classifier:
 
@@ -34,6 +49,7 @@ instruction).
 from __future__ import annotations
 
 import csv
+import os
 import random
 import sys
 from collections import defaultdict
@@ -43,8 +59,6 @@ import numpy as np
 import torch
 from PIL import Image
 from torch import nn
-from torchvision import transforms
-from torchvision.models import resnet18
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
@@ -60,12 +74,14 @@ from cards.data.celeba_attributes import (
     load_attribute_labels,
     load_attribute_names,
 )
+from cards.models.backbones import BACKBONES
 from cards.validation.broden_faithfulness import compute_faithfulness
 
-CELEBA_HQ_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ")
-CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
-RESULTS_DIR = Path("results")
-CKPT_PATH = Path("trained_models_new/celeba/resnet18_official_train_attractive_male.pt")
+CELEBA_HQ_ROOT = Path(os.environ.get("CELEBA_HQ_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebAMask-HQ"))
+CELEBA_ROOT = Path(os.environ.get("CELEBA_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebA\celeba"))
+RESULTS_DIR = Path(os.environ.get("CARDS_RESULTS_DIR", "results"))
+BACKBONE_NAME = os.environ.get("CARDS_BACKBONE_NAME", "celeba_official_train_attractive_male")
+MODEL_SUFFIX = BACKBONE_NAME.replace("celeba_official_train_attractive_male", "")
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 N_PER_ATTRIBUTE = 90
@@ -74,24 +90,6 @@ FILL_STRATEGY = "blur"
 MIN_SAMPLES_PER_PAIR = 3
 TASKS = ["Attractive", "Male"]
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
-
-
-def official_train_preprocess() -> transforms.Compose:
-    return transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-
-def load_official_train_native() -> nn.Module:
-    model = resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, 4)  # [0:2]=Attractive [2:4]=Male
-    state = torch.load(CKPT_PATH, map_location="cpu")
-    model.load_state_dict(state)
-    return model.eval()
 
 
 class OfficialTrainTaskAdapter:
@@ -220,20 +218,22 @@ def main():
           f"official-train set -- known leakage, kept for comparability)", flush=True)
 
     print(f"{len(GROUNDABLE_CONCEPTS)} groundable concepts to score against {TASKS}.", flush=True)
-    native_model = load_official_train_native()
-    preprocess = official_train_preprocess()
+    print(f"BACKBONE_NAME={BACKBONE_NAME}  MODEL_SUFFIX={MODEL_SUFFIX!r}", flush=True)
+    spec = BACKBONES[BACKBONE_NAME]
+    native_model = spec.load_native()
+    preprocess = spec.preprocess
 
     results_non_overlap = generate_ground_truth(
         "non_overlapping", non_overlapping, image_paths_by_idx, attr_names, attr_labels_by_file,
         native_model, preprocess, seed_offset=0,
     )
-    save_and_report("non_overlapping", "celeba_official_train_faithfulness_non_overlapping.csv", results_non_overlap)
+    save_and_report("non_overlapping", f"celeba_official_train{MODEL_SUFFIX}_faithfulness_non_overlapping.csv", results_non_overlap)
 
     results_previously_used = generate_ground_truth(
         "previously_used", previously_used, image_paths_by_idx, attr_names, attr_labels_by_file,
         native_model, preprocess, seed_offset=500_000_000,
     )
-    save_and_report("previously_used", "celeba_official_train_faithfulness_previously_used.csv", results_previously_used)
+    save_and_report("previously_used", f"celeba_official_train{MODEL_SUFFIX}_faithfulness_previously_used.csv", results_previously_used)
 
 
 if __name__ == "__main__":

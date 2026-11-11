@@ -20,6 +20,13 @@
 # this repo (../post_hoc_cbm relative to CARDS root) -- confirm it's
 # checked out at that path on Sol too, same as this track's other
 # TCAV/PCBM scripts.
+#
+# `--extra tcav` is REQUIRED, confirmed directly by a real
+# ModuleNotFoundError on Sol ("No module named 'captum'") -- captum
+# lives behind CARDS' own `tcav` extra (pyproject.toml), not the default
+# dependency set. NOT the same extra as the PCBM scripts' `pcbm-training`
+# (pandas) -- this script never imports post_hoc_cbm's `data`/`train_pcbm`
+# modules, only `concepts.concept_utils`, so it doesn't need pandas.
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -45,4 +52,4 @@ if [ ! -d ../post_hoc_cbm ]; then
     exit 1
 fi
 
-uv run python scripts/celeba/run/run_tcav_shortcut_experiment_official_train.py
+uv run --extra tcav python scripts/celeba/run/run_tcav_shortcut_experiment_official_train.py

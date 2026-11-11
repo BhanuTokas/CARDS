@@ -31,8 +31,8 @@ Run everything from the repo root. Paths are set in `paths.py` (environment over
 | Rank methods | `rank_gts.sh NAME ...` (wraps `rank_methods.py`) | `rank_NAME.txt` |
 | Visual review | `review_sheets.py`, `compare_sheets.py` | `$CARDS_INPAINT_REVIEW` |
 
-The extra baselines ranked here (ConceptSAE, ConceptSHAP, EAC, KernelSHAP-SAM, soft CARDS) are produced by
-`scripts/celeba/baselines/` on the `celeba_baselines` branch; `rank_gts.sh` only reads their output CSVs.
+The extra baselines ranked here (ConceptSAE, ConceptSHAP, EAC, soft CARDS) are produced by
+`scripts/celeba/baselines/` (see its README); `rank_gts.sh` only reads their output CSVs.
 
 ## Notes
 - The removal detector and VLM judge are diagnostics. They order inpainters by how much they remove; they never

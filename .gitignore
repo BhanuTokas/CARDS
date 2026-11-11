@@ -229,9 +229,10 @@ embedding_cache/
 *.pth
 trained_concepts_new/
 trained_models_new/
+scripts/captioning/
+scripts/coco_stuff/
 generate_latex_*
 build_*icon.py
 build_*grid.py
 build_*figure.py
 build_*latex.py
-scripts/captioning/

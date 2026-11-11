@@ -1,4 +1,4 @@
-"""TCAV on the NEW official-train classifier, both tasks (Attractive,
+"""TCAV on the official-train classifier, both tasks (Attractive,
 Male -- Young dropped), prompted directly ("Do we also have results of
 PCBM and TCAV on this version of ground truth?"). Mirrors `run_tcav_
 celeba_male.py`'s own design (whole-image real-attribute-label concept
@@ -11,11 +11,27 @@ actually trained on, and avoiding any CelebAMask-HQ dependency this
 official-train arc otherwise doesn't need for TCAV specifically (the
 ground truth is the only piece that needs CelebAMask-HQ's masks; TCAV's
 own concept definition here is whole-image, no masks required).
+
+**Generalized to any official-train backbone** (`CARDS_BACKBONE_NAME`
+env var, default `celeba_official_train_attractive_male`), prompted
+directly ("The full pipeline with PCBM variants" for ViT-B/16 and
+ConvNeXt-Tiny) -- already hooked `spec.hook_layer` dynamically rather
+than a hardcoded "layer4", so this only needed the backbone-name lookup
+itself parameterized, plus an output-filename suffix.
+
+--layer picks the hooked layer (default: the backbone's hook_layer, layer4 for
+the ResNet18). After layer4 the ResNet is only pooling and a linear head, so
+every input of a task has the same gradient and each CAV's sign count is
+exactly 0 or 1; --layer layer3 gives input-dependent gradients. A non-default
+layer writes tcav_celeba_official_train<suffix>_scores_<layer>.csv and its own
+CAV cache.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
+import os
 import random
 import sys
 from pathlib import Path
@@ -35,8 +51,10 @@ from concepts.concept_utils import ListDataset
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 from cards.models.backbones import BACKBONES
 
-CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
-RESULTS_DIR = Path("results")
+CELEBA_ROOT = Path(os.environ.get("CELEBA_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebA\celeba"))
+RESULTS_DIR = Path(os.environ.get("CARDS_RESULTS_DIR", "results"))
+BACKBONE_NAME = os.environ.get("CARDS_BACKBONE_NAME", "celeba_official_train_attractive_male")
+MODEL_SUFFIX = BACKBONE_NAME.replace("celeba_official_train_attractive_male", "")
 SEED = 42
 DEVICE = "cpu"  # captum's Concept.data_iter never moves batches to CUDA
 N_RANDOM = 6
@@ -71,12 +89,17 @@ def make_concept(concept_id: int, name: str, filenames: list[str], preprocess, b
 
 def main():
     RESULTS_DIR.mkdir(exist_ok=True)
-    spec = BACKBONES["celeba_official_train_attractive_male"]
+    print(f"BACKBONE_NAME={BACKBONE_NAME}  MODEL_SUFFIX={MODEL_SUFFIX!r}", flush=True)
+    spec = BACKBONES[BACKBONE_NAME]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--layer", default=spec.hook_layer, help="layer to hook (default: the backbone's hook_layer)")
+    layer = parser.parse_args().layer
+    sfx = "" if layer == spec.hook_layer else f"_{layer}"
     native_model = spec.load_native().to(DEVICE).eval()
     preprocess = spec.preprocess
 
-    tcav = TCAV(model=native_model, layers=[spec.hook_layer],
-                save_path=str(RESULTS_DIR / "tcav_celeba_official_train_cav_cache"))
+    tcav = TCAV(model=native_model, layers=[layer],
+                save_path=str(RESULTS_DIR / f"tcav_celeba_official_train{MODEL_SUFFIX}_cav_cache{sfx}"))
 
     print("Loading official CelebA metadata...", flush=True)
     attr_names = load_attr_names(CELEBA_ROOT / "list_attr_celeba.txt")
@@ -136,15 +159,15 @@ def main():
             experimental_sets = [[target_concept, rc] for rc in random_concepts]
             scores = tcav.interpret(inputs=inputs, experimental_sets=experimental_sets, target=target_idx)
             target_sign_counts = [
-                scores[f"{target_concept.id}-{rc.id}"][spec.hook_layer]["sign_count"][0].item() for rc in random_concepts
+                scores[f"{target_concept.id}-{rc.id}"][layer]["sign_count"][0].item() for rc in random_concepts
             ]
             target_magnitudes = [
-                scores[f"{target_concept.id}-{rc.id}"][spec.hook_layer]["magnitude"][0].item() for rc in random_concepts
+                scores[f"{target_concept.id}-{rc.id}"][layer]["magnitude"][0].item() for rc in random_concepts
             ]
 
             control_scores = tcav.interpret(inputs=inputs, experimental_sets=control_sets, target=target_idx)
             control_sign_counts = [
-                control_scores[f"{a.id}-{b.id}"][spec.hook_layer]["sign_count"][0].item() for a, b in control_sets
+                control_scores[f"{a.id}-{b.id}"][layer]["sign_count"][0].item() for a, b in control_sets
             ]
 
             t_stat, p_value = ttest_ind(target_sign_counts, control_sign_counts)
@@ -160,13 +183,13 @@ def main():
             print(f"{concept_name:<20s} / {task_name:<12s}: sign_count={mean_sign_count:.3f} "
                   f"(null={mean_control:.3f})  magnitude={mean_magnitude:.4f}  p={p_value:.4g}", flush=True)
 
-    with open(RESULTS_DIR / "tcav_celeba_official_train_scores.csv", "w", newline="") as f:
+    out_path = RESULTS_DIR / f"tcav_celeba_official_train{MODEL_SUFFIX}_scores{sfx}.csv"
+    with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"\n{len(results)} total (concept, task) TCAV rows saved to "
-          f"results/tcav_celeba_official_train_scores.csv")
+    print(f"\n{len(results)} total (concept, task) TCAV rows saved to {out_path}")
 
 
 if __name__ == "__main__":

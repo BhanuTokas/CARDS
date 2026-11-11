@@ -20,6 +20,13 @@
 # Takes the backbone as its own arg -- submit TWICE, once per encoder:
 #   sbatch scripts/celeba/run/submit_pcbm_clip_concepts_shortcut_experiment_official_train_hpc.sh siglip
 #   sbatch scripts/celeba/run/submit_pcbm_clip_concepts_shortcut_experiment_official_train_hpc.sh clip_rn50
+#
+# `--extra pcbm-training` is REQUIRED, confirmed directly by a real
+# ModuleNotFoundError on Sol ("No module named 'pandas'") on the sibling
+# conventional-PCBM job -- this script's own `from train_pcbm import
+# run_linear_probe` hits the identical transitive import chain (train_pcbm
+# -> post_hoc_cbm's data/__init__.py -> concept_loaders.py -> pandas).
+# pandas lives behind CARDS' own `pcbm-training` extra (pyproject.toml).
 
 module purge
 export PATH="$HOME/.local/bin:$PATH"   # reach uv -- one-time login-node install: curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -52,4 +59,4 @@ if [ ! -d ../post_hoc_cbm ]; then
     exit 1
 fi
 
-uv run python scripts/celeba/run/run_pcbm_clip_concepts_shortcut_experiment_official_train.py "$BACKBONE"
+uv run --extra pcbm-training python scripts/celeba/run/run_pcbm_clip_concepts_shortcut_experiment_official_train.py "$BACKBONE"

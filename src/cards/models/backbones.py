@@ -29,7 +29,12 @@ import torch
 from PIL import Image
 from torch import nn
 from torchvision import transforms
-from torchvision.models import ResNet18_Weights, resnet18
+from torchvision.models import (
+    ResNet18_Weights,
+    convnext_tiny,
+    resnet18,
+    vit_b_16,
+)
 
 from cards.models.posthoc_cbm import cub_preprocess
 
@@ -39,6 +44,8 @@ _CELEBA_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young.pt")
 _CELEBA_LOWRES_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_lowres.pt")
 _CELEBA_MALE_CKPT = Path("trained_models_new/celeba/resnet18_attractive_young_male.pt")
 _CELEBA_OFFICIAL_TRAIN_CKPT = Path("trained_models_new/celeba/resnet18_official_train_attractive_male.pt")
+_CELEBA_OFFICIAL_TRAIN_VIT_CKPT = Path("trained_models_new/celeba/vit_b_16_official_train_attractive_male.pt")
+_CELEBA_OFFICIAL_TRAIN_CONVNEXT_CKPT = Path("trained_models_new/celeba/convnext_tiny_official_train_attractive_male.pt")
 # Standard (non-HQ) CelebA's own native img_align_celeba resolution
 # (width, height) -- the degrade target for the low-res variant below.
 _STANDARD_CELEBA_SIZE = (178, 218)
@@ -72,6 +79,57 @@ def _resnet18_feature_extractor(native_model: nn.Module) -> nn.Module:
     `load_native()` returned (not a second load), so PCBM's and TCAV's
     view of the backbone are guaranteed identical."""
     return nn.Sequential(*list(native_model.children())[:-1])
+
+
+class _ViTEmbeddingExtractor(nn.Module):
+    """Replicates torchvision's `VisionTransformer.forward()` up to (and
+    including) CLS-token extraction, dropping only the final `heads`
+    classification layer. Confirmed directly against torchvision's own
+    source (`_process_input` + `forward`) -- ViT's forward does custom
+    patchify/reshape/class-token-prepend logic between `conv_proj` and
+    `encoder` that `nn.Sequential(*children[:-1])` can't replicate by
+    blindly chaining submodules (unlike ResNet's plain conv-stack-then-
+    pool structure, where that trick works). Reuses the loaded native
+    model's own submodules directly, not a second load."""
+
+    def __init__(self, native_model: nn.Module):
+        super().__init__()
+        self.conv_proj = native_model.conv_proj
+        self.class_token = native_model.class_token
+        self.encoder = native_model.encoder
+        self.hidden_dim = native_model.hidden_dim
+        self.patch_size = native_model.patch_size
+        self.image_size = native_model.image_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n, _c, h, w = x.shape
+        p = self.patch_size
+        n_h, n_w = h // p, w // p
+        x = self.conv_proj(x)
+        x = x.reshape(n, self.hidden_dim, n_h * n_w)
+        x = x.permute(0, 2, 1)
+        batch_class_token = self.class_token.expand(n, -1, -1)
+        x = torch.cat([batch_class_token, x], dim=1)
+        x = self.encoder(x)
+        return x[:, 0]
+
+
+def _vit_feature_extractor(native_model: nn.Module) -> nn.Module:
+    return _ViTEmbeddingExtractor(native_model)
+
+
+def _convnext_feature_extractor(native_model: nn.Module) -> nn.Module:
+    """Backbone-up-to-pooled-embedding, native `classifier[2]` (the final
+    Linear) dropped -- confirmed directly against the real module tree
+    (`features`, `avgpool`, `classifier=Sequential(LayerNorm2d, Flatten,
+    Linear)`). Keeps `classifier[0]`/`classifier[1]` (LayerNorm2d,
+    Flatten) in the extractor -- they're pretrained normalization/
+    reshaping the rest of the network expects before its final layer,
+    not part of the "head" the way the Linear is, so dropping the whole
+    `classifier` Sequential (the ResNet-style "drop last child" trick)
+    would be wrong here."""
+    return nn.Sequential(native_model.features, native_model.avgpool,
+                          native_model.classifier[0], native_model.classifier[1])
 
 
 def _load_celeba_attractive_young_native() -> nn.Module:
@@ -120,6 +178,37 @@ def _load_celeba_official_train_native() -> nn.Module:
     model = resnet18(weights=None)
     model.fc = nn.Linear(model.fc.in_features, 4)
     state = torch.load(_CELEBA_OFFICIAL_TRAIN_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _load_celeba_official_train_vit_native() -> nn.Module:
+    """`train_official_celeba_classifier_vit.py`'s own checkpoint --
+    SAME official-train data/2-task-4-way-logit-head convention as
+    `_load_celeba_official_train_native`, ViT-B/16 backbone instead of
+    ResNet18, prompted directly ("I want to do the main CelebA
+    experiment with ViT and one other model as the black box model").
+    `model.heads` (torchvision's own Sequential wrapper) is replaced
+    wholesale with a plain Linear, matching the training script's own
+    head-swap exactly."""
+    model = vit_b_16(weights=None)
+    model.heads = nn.Linear(model.hidden_dim, 4)
+    state = torch.load(_CELEBA_OFFICIAL_TRAIN_VIT_CKPT, map_location="cpu")
+    model.load_state_dict(state)
+    return model.eval()
+
+
+def _load_celeba_official_train_convnext_native() -> nn.Module:
+    """`train_official_celeba_classifier_convnext.py`'s own checkpoint --
+    SAME official-train data/2-task-4-way-logit-head convention,
+    ConvNeXt-Tiny backbone. Only `classifier[2]` (the final Linear) is
+    replaced, matching the training script's own head-swap exactly --
+    see `_convnext_feature_extractor`'s docstring for why the whole
+    `classifier` Sequential isn't swapped wholesale."""
+    model = convnext_tiny(weights=None)
+    in_features = model.classifier[2].in_features
+    model.classifier[2] = nn.Linear(in_features, 4)
+    state = torch.load(_CELEBA_OFFICIAL_TRAIN_CONVNEXT_CKPT, map_location="cpu")
     model.load_state_dict(state)
     return model.eval()
 
@@ -238,5 +327,29 @@ BACKBONES: dict[str, BackboneSpec] = {
         load_native=_load_celeba_official_train_native,
         preprocess=_celeba_preprocess(),
         feature_extractor=_resnet18_feature_extractor,
+    ),
+    # hook_layer confirmed directly against a real vit_b_16(weights=None)
+    # instance's own named_children() -- last of 12 transformer blocks
+    # (encoder.layers.encoder_layer_0..11), not assumed by analogy to
+    # ResNet's "layer4".
+    "celeba_official_train_attractive_male_vit": BackboneSpec(
+        name="celeba_official_train_attractive_male_vit",
+        embed_dim=768,
+        hook_layer="encoder.layers.encoder_layer_11",
+        load_native=_load_celeba_official_train_vit_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_vit_feature_extractor,
+    ),
+    # hook_layer confirmed directly against a real convnext_tiny(weights=
+    # None) instance's own named_children() -- features.7 is the last of
+    # 8 top-level stages (stem + 4 stage/downsample pairs collapse to 8
+    # Sequential entries in torchvision's own indexing).
+    "celeba_official_train_attractive_male_convnext": BackboneSpec(
+        name="celeba_official_train_attractive_male_convnext",
+        embed_dim=768,
+        hook_layer="features.7",
+        load_native=_load_celeba_official_train_convnext_native,
+        preprocess=_celeba_preprocess(),
+        feature_extractor=_convnext_feature_extractor,
     ),
 }

@@ -2,7 +2,7 @@
 # Rank all methods against one or more GT CSVs:  scripts/celeba/inpainting/rank_gts.sh NAME [NAME ...]
 # Reads $CARDS_INPAINT_WORK/gt_NAME.csv (build_inpaint_gts.py) and writes rank_NAME.txt next to it; prints the
 # logit-scale pooled block. Run from the repo root with post_hoc_cbm on PYTHONPATH (PCBM checkpoints).
-# Baseline score CSVs expected in the work dir: sae_scores.csv, cshap_scores.csv (scripts/celeba/baselines on the celeba_baselines branch).
+# Baseline score CSVs expected in the work dir: sae_scores.csv, cshap_scores.csv (scripts/celeba/baselines).
 # More methods: EXTRA2="label|csv|column;..." (CSV with task, concept_name columns), e.g. EAC, KernelSHAP-SAM, soft CARDS.
 # Restrict concepts: KEEP=Concept_A,Concept_B
 set -euo pipefail

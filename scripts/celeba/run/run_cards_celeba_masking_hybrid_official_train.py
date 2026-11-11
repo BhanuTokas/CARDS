@@ -1,22 +1,33 @@
-"""Masking hybrid on the NEW official-train classifier
-(`celeba_official_train_attractive_male`), at v113's established
-winning config (SigLIP, orthogonalize=True, demean_query=True, K=50,
-z-score alpha=1.0, `baseline` phrasing, official-val retrieval pool) --
-prompted directly ("Can we train a classifier on the CelebA official
-train set and see if it holds the same pattern?").
+"""Masking hybrid on the official-train classifier, at v113's
+established winning config (SigLIP, orthogonalize=True, demean_
+query=True, K=50, z-score alpha=1.0, `baseline` phrasing, official-val
+retrieval pool) -- prompted directly ("Can we train a classifier on
+the CelebA official train set and see if it holds the same pattern?").
+
+**Generalized to any official-train backbone** (`CARDS_BACKBONE_NAME`
+env var, default `celeba_official_train_attractive_male` -- the
+original ResNet18), prompted directly ("The full pipeline with PCBM
+variants" for ViT-B/16 and ConvNeXt-Tiny) -- the masking hybrid's own
+mechanism (SigLIP retrieval/localization) never touched the black-box
+classifier's architecture directly, it only needed `spec.load_native()`
++ `spec.preprocess` through `BACKBONES[...]`, already a one-line swap.
+GT filenames and output filenames get a model-name suffix derived from
+`BACKBONE_NAME` (empty for the original ResNet18; `_vit`/`_convnext`
+for the new ones), matching `run_celeba_official_train_faithfulness.
+py`'s own convention exactly.
 
 Scores BOTH tasks (Attractive, Male -- Young dropped per direct
 instruction) against BOTH ground-truth versions (`non_overlapping`,
 `previously_used` -- see `run_celeba_official_train_faithfulness.py`'s
-own docstring for what each means and the confirmed 79.7% leakage rate
-in `previously_used` for THIS classifier specifically). Raw per-concept
-scores are computed ONCE per task and re-correlated against both GT
-versions (cheap -- GT-independent, same pattern established in v113).
+own docstring for what each means). Raw per-concept scores are computed
+ONCE per task and re-correlated against both GT versions (cheap --
+GT-independent, same pattern established in v113).
 """
 
 from __future__ import annotations
 
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -50,8 +61,11 @@ from cards.validation.broden_faithfulness import (
     score_sign_agreement,
 )
 
-CELEBA_ROOT = Path(r"C:\Users\btokas\Projects\Datasets\CelebA\celeba")
-RESULTS_DIR = Path("results")
+CELEBA_ROOT = Path(os.environ.get("CELEBA_ROOT", r"C:\Users\btokas\Projects\Datasets\CelebA\celeba"))
+RESULTS_DIR = Path(os.environ.get("CARDS_RESULTS_DIR", "results"))
+CACHE_DIR = Path(os.environ.get("CARDS_CACHE_DIR", "embedding_cache"))
+BACKBONE_NAME = os.environ.get("CARDS_BACKBONE_NAME", "celeba_official_train_attractive_male")
+MODEL_SUFFIX = BACKBONE_NAME.replace("celeba_official_train_attractive_male", "")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K = 50
 ALPHA = 1.0
@@ -60,8 +74,8 @@ TASKS = ["Attractive", "Male"]
 TASK_SLICE = {"Attractive": 1, "Male": 3}  # positive-class logit index within the 4-way head
 CONCEPT_TO_IDX = {name: i for i, name in enumerate(GROUNDABLE_CONCEPTS)}
 GT_VERSIONS = {
-    "non_overlapping": "celeba_official_train_faithfulness_non_overlapping.csv",
-    "previously_used": "celeba_official_train_faithfulness_previously_used.csv",
+    "non_overlapping": f"celeba_official_train{MODEL_SUFFIX}_faithfulness_non_overlapping.csv",
+    "previously_used": f"celeba_official_train{MODEL_SUFFIX}_faithfulness_previously_used.csv",
 }
 
 
@@ -98,12 +112,13 @@ def load_records(gt_filename: str, task_name: str) -> list[FaithfulnessResult]:
 
 def main():
     RESULTS_DIR.mkdir(exist_ok=True)
+    print(f"BACKBONE_NAME={BACKBONE_NAME}  MODEL_SUFFIX={MODEL_SUFFIX!r}", flush=True)
 
     cfg = OmegaConf.create({
         "seed": SEED, "device": DEVICE,
         "encoder": {"name": "siglip", "_target_": "cards.encoders.open_clip_encoder.OpenClipEncoder",
                     "model_name": "ViT-B-16-SigLIP", "pretrained": "webli", "device": DEVICE},
-        "cache_dir": "embedding_cache",
+        "cache_dir": str(CACHE_DIR),
         "retrieval": {"strategy": "naive"}, "k": K,
         "masking_hybrid": {"threshold_method": "zscore", "alpha": ALPHA},
     })
@@ -114,13 +129,13 @@ def main():
     demeaned = {c: demean_query(q, text_center) for c, q in raw_queries.items()}
     queries = orthogonalize_queries(demeaned)
 
-    spec = BACKBONES["celeba_official_train_attractive_male"]
+    spec = BACKBONES[BACKBONE_NAME]
     native_model = spec.load_native().to(DEVICE).eval()
 
     official_paths = build_clean_official_val_paths()
     pairs = [(p, 0) for p in official_paths]
 
-    pool_cfg = OmegaConf.create({"seed": 0, "device": DEVICE, "encoder": cfg.encoder, "cache_dir": "embedding_cache"})
+    pool_cfg = OmegaConf.create({"seed": 0, "device": DEVICE, "encoder": cfg.encoder, "cache_dir": str(CACHE_DIR)})
     pool_cfg.dataset = {"name": "celeba_official_val_clean", "root": str(CELEBA_ROOT)}
     pool_cfg.pool_source = "val"
     pool = load_or_build_pool(Path(pool_cfg.cache_dir), cache_key_for(pool_cfg), pairs, encoder)
@@ -156,7 +171,7 @@ def main():
             all_rows.append((task_name, gt_name, rho_r.n_pairs, rho_r.spearman_rho, rho_r.spearman_p,
                               sign_r.agreement_frac, sign_r.n_agree, sign_r.binom_p))
 
-    out_path = RESULTS_DIR / "cards_celeba_masking_hybrid_official_train_comparison.csv"
+    out_path = RESULTS_DIR / f"cards_celeba_masking_hybrid_official_train{MODEL_SUFFIX}_comparison.csv"
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["task", "gt_version", "n_pairs", "spearman_rho", "spearman_p",
@@ -164,7 +179,7 @@ def main():
         writer.writerows(all_rows)
     print(f"\nSaved {len(all_rows)} rows to {out_path}")
 
-    raw_path = RESULTS_DIR / "cards_celeba_masking_hybrid_official_train_raw_scores.csv"
+    raw_path = RESULTS_DIR / f"cards_celeba_masking_hybrid_official_train{MODEL_SUFFIX}_raw_scores.csv"
     with open(raw_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["task", "concept_name", "hybrid_raw_score"])

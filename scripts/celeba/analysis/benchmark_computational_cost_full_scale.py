@@ -50,7 +50,12 @@ from run_cards_celeba_full import CONCEPT_QUERY_TEXT
 from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
 
 from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask
-from cards.concepts.prompts import GENERIC_REFERENCE_CONCEPTS, build_concept_query, compute_text_center, demean_query
+from cards.concepts.prompts import (
+    GENERIC_REFERENCE_CONCEPTS,
+    build_concept_query,
+    compute_text_center,
+    demean_query,
+)
 from cards.data.celeba_attributes import GROUNDABLE_CONCEPTS
 from cards.models.backbones import BACKBONES
 from cards.pipeline import instantiate_encoder, orthogonalize_queries
@@ -309,7 +314,7 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["method", "phase", "seconds"])
         writer.writerows(rows)
-    print(f"\nSaved results/computational_cost_benchmark_full_scale.csv", flush=True)
+    print("\nSaved results/computational_cost_benchmark_full_scale.csv", flush=True)
 
 
 if __name__ == "__main__":
