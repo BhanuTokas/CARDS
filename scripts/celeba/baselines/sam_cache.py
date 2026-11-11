@@ -1,6 +1,9 @@
 """SAM automatic masks per CelebA-HQ image, cached (bit-packed .npz) in $CARDS_SAM_CACHE when that is set, so EAC,
-KernelSHAP and every black box see identical segments and SAM runs once per image. Unset = no caching."""
+KernelSHAP and every black box see identical segments and SAM runs once per image. Unset = no caching.
+Writes go to a unique temporary file that is then renamed into place (atomic), so concurrent jobs that segment the
+same image never read a partly written file."""
 import os
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -17,5 +20,7 @@ def sam_masks(gen, key, raw: np.ndarray) -> np.ndarray:
     m = np.stack([x["segmentation"] for x in gen.generate(raw)])
     if f is not None:
         CACHE.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(f, m=np.packbits(m, axis=-1), w=m.shape[-1])
+        tmp = f.with_name(f"{f.stem}.{uuid.uuid4().hex}.tmp.npz")
+        np.savez_compressed(tmp, m=np.packbits(m, axis=-1), w=m.shape[-1])
+        os.replace(tmp, f)
     return m
