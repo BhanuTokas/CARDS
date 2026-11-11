@@ -56,11 +56,15 @@ from scipy.ndimage import gaussian_filter, zoom
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from run_hns_bam_masks import ALPHA, CONCEPTS, SEED, retrieve  # noqa: E402
+from run_hns_bam_masks import ALPHA, CONCEPTS, SEED, retrieve
 
-from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask  # noqa: E402
-from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES as FILLS  # noqa: E402
-from cards.validation.broden_faithfulness import mask_region, random_placements  # noqa: E402
+from cards.attribution.localization import (
+    concept_zscore_cutoff,
+    localize_concept,
+    threshold_mask,
+)
+from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES as FILLS
+from cards.validation.broden_faithfulness import mask_region, random_placements
 
 N_NULL = 3
 MAX_FILL = 0.8  # skip when c's mask is too big to fit an equal-area mask outside it

@@ -29,8 +29,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from run_hns_bam_masks import CONCEPTS  # noqa: E402
-from sample_bam_concept_sets import OBJECTS, SCENES  # noqa: E402
+from run_hns_bam_masks import CONCEPTS
+from sample_bam_concept_sets import OBJECTS, SCENES
 
 MODELS = {"obj": OBJECTS, "scene": SCENES}
 FAMILY = {c: "obj" for c in OBJECTS} | {c: "scene" for c in SCENES}
@@ -213,8 +213,8 @@ def main() -> None:
     for name, (S, U, comparable) in methods.items():
         ranks = rank_test(S)
         contrast = contrast_test(U)
-        for model in MODELS:
-            r = [ranks[model, cls] for cls in MODELS[model]]
+        for model, classes in MODELS.items():
+            r = [ranks[model, cls] for cls in classes]
             summary.append({"method": name, "test": f"rank, {model} model",
                             "value": f"top-1 {sum(x == 1 for x in r)}/10, mean rank {np.mean(r):.1f}"})
         values = np.array(list(contrast.values()))

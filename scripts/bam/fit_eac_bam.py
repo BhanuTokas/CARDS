@@ -36,9 +36,9 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent))
-from fit_concept_sae_bam import linear_head  # noqa: E402
-from PIL import Image  # noqa: E402
-from sample_bam_concept_sets import OBJECTS, SCENES  # noqa: E402
+from fit_concept_sae_bam import linear_head
+from PIL import Image
+from sample_bam_concept_sets import OBJECTS, SCENES
 
 CLASSES = {"obj": OBJECTS, "scene": SCENES}
 EPOCHS, BATCH, LR, MOMENTUM = 50, 100, 0.008, 0.9

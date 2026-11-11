@@ -35,9 +35,9 @@ import torch.nn.functional as Fn
 from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).parent))
-from fit_concept_sae_bam import linear_head  # noqa: E402
-from run_hns_bam_masks import CONCEPTS  # noqa: E402
-from sample_bam_concept_sets import OBJECTS, SCENES  # noqa: E402
+from fit_concept_sae_bam import linear_head
+from run_hns_bam_masks import CONCEPTS
+from sample_bam_concept_sets import OBJECTS, SCENES
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 M, BETA, LAM, TOPK, LR, BS, EPOCHS, N_PERM = 40, 0.2, 0.1, 32, 1e-3, 256, 10, 300
@@ -147,7 +147,7 @@ def main() -> None:
             a_r = share.max()
             Yv = torch.tensor(y_val, device=DEV).float()
 
-            def value(mask):
+            def value(mask, net=net, V=V, W=W, B=B, yv=yv, a_r=a_r, Yv=Yv):
                 L = torch.cat([net.pooled(V[s:s + 1024] * mask) @ W.T + B for s in range(0, len(V), 1024)])
                 eta = ((L.argmax(1) == yv).float().mean() - a_r) / (1 - a_r)
                 return eta, (Yv.T @ L) / Yv.sum(0)[:, None]  # (concepts, classes)

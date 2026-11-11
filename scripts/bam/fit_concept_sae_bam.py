@@ -26,8 +26,8 @@ import torch
 from scipy.stats import rankdata
 
 sys.path.insert(0, str(Path(__file__).parent))
-from run_hns_bam_masks import CONCEPTS  # noqa: E402
-from sample_bam_concept_sets import OBJECTS, SCENES  # noqa: E402
+from run_hns_bam_masks import CONCEPTS
+from sample_bam_concept_sets import OBJECTS, SCENES
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 N_LAT, K, LR, BS, EPOCHS = 4096, 32, 4e-4, 4096, 60

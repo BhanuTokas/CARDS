@@ -32,13 +32,13 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES, masking_score
 from cards.concepts.prompts import (
     GENERIC_REFERENCE_CONCEPTS,
     build_concept_query,
     compute_text_center,
     demean_query,
 )
-from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES, masking_score
 from cards.pipeline import instantiate_encoder, orthogonalize_queries, process_concept
 from cards.retrieval.embedding_cache import cache_key_for, load_or_build_pool
 

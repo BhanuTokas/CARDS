@@ -34,12 +34,17 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from run_hns_bam_masks import ALPHA, CONCEPTS, SEED, retrieve  # noqa: E402
-from run_hns_bam_nulls import MAX_FILL, NULL_SEEDS, best_fill, random_shape  # noqa: E402
+from run_hns_bam_masks import ALPHA, CONCEPTS, SEED, retrieve
+from run_hns_bam_nulls import MAX_FILL, NULL_SEEDS, best_fill, random_shape
 
-from cards.attribution.localization import concept_zscore_cutoff, localize_concept, threshold_mask  # noqa: E402
-from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES as FILLS  # noqa: E402
-from cards.validation.broden_faithfulness import mask_region  # noqa: E402
+from cards.attribution.localization import (
+    concept_zscore_cutoff,
+    localize_concept,
+    threshold_mask,
+)
+from cards.attribution.masking_mode import DEFAULT_FILL_STRATEGIES as FILLS
+from cards.validation.broden_faithfulness import mask_region
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -75,7 +80,7 @@ def main() -> None:
                 masks |= {"s0": s0, "s1": s1}
                 n_shapes += 1
             for fill in fills:
-                def apply(img, m, rng):
+                def apply(img, m, rng, fill=fill, result=result):
                     if fill == "best":
                         return best_fill(encoder, img, m, rng, result.query)
                     return mask_region(img, m, strategy=fill, rng=rng)
