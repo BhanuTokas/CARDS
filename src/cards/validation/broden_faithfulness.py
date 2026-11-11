@@ -239,6 +239,24 @@ def _area_matched_rectangle(mask: np.ndarray, rng: np.random.Generator) -> np.nd
     return candidate
 
 
+def _non_overlapping_rectangle(
+    mask: np.ndarray,
+    rng: np.random.Generator,
+    exclude: list[np.ndarray],
+    max_overlap_frac: float,
+    max_attempts: int,
+) -> np.ndarray | None:
+    """`_area_matched_rectangle` with the overlap limit enforced, for
+    `random_placements(strict=True)`. Returns None when no placement within
+    `max_attempts` satisfies the limit, rather than an overlapping square."""
+    for _attempt in range(max_attempts):
+        candidate = _area_matched_rectangle(mask, rng)
+        total = candidate.sum()
+        if all((candidate & ex).sum() / total <= max_overlap_frac for ex in exclude):
+            return candidate
+    return None
+
+
 def random_placements(
     mask: np.ndarray,
     rng: np.random.Generator,
@@ -246,6 +264,7 @@ def random_placements(
     exclude_masks: list[np.ndarray] | None = None,
     max_overlap_frac: float = 0.1,
     max_attempts: int = 200,
+    strict: bool = False,
 ) -> tuple[list[np.ndarray], int]:
     """Translates `mask`'s *exact* shape (not just an area-matched
     rectangle) to `n_draws` random valid offsets -- holds shape AND area
@@ -257,6 +276,16 @@ def random_placements(
     back to `_area_matched_rectangle` after `max_attempts` failed
     attempts. Returns (placements, n_fallbacks) so callers can see how
     often the fallback triggered.
+
+    The default fallback square does NOT apply the overlap check, so for
+    masks too large to translate clear of themselves (hair, skin) the
+    "random" control can land on the concept it is meant to avoid. With
+    `strict=True` the fallback enforces the same overlap limit, and a draw
+    with no valid placement is dropped, so `len(placements)` can be below
+    `n_draws` (possibly 0). Sampling stops at the first such draw: it has
+    already failed every attempt, and retrying costs seconds per image on
+    full-resolution masks. `strict=False` keeps the original behavior and
+    rng consumption, which every existing ground-truth CSV depends on.
     """
     h, w = mask.shape
     ys, xs = np.nonzero(mask)
@@ -286,8 +315,13 @@ def random_placements(
                     found = candidate
                     break
         if found is None:
-            found = _area_matched_rectangle(mask, rng)
             n_fallbacks += 1
+            if strict:
+                found = _non_overlapping_rectangle(mask, rng, exclude, max_overlap_frac, max_attempts)
+                if found is None:
+                    break
+            else:
+                found = _area_matched_rectangle(mask, rng)
         placements.append(found)
 
     return placements, n_fallbacks
@@ -307,6 +341,7 @@ class FaithfulnessResult:
     random_delta_p_std: float
     z_score: float
     n_random_fallbacks: int
+    n_random_valid: int = -1  # control draws actually used; -1 = not recorded
 
 
 @torch.no_grad()
@@ -322,6 +357,8 @@ def compute_faithfulness(
     fill_strategy: str = "blur",
     device: str = "cpu",
     target_class: int | None = None,
+    exclude_masks: list[np.ndarray] | None = None,
+    strict_control: bool = False,
 ) -> FaithfulnessResult:
     """The core per-(image, concept) measurement. By default uses the
     model's own top-1 prediction on the *unmasked* image as "the class of
@@ -336,7 +373,12 @@ def compute_faithfulness(
     `predicted_class` field holds whichever one was actually used --
     callers passing `target_class` are responsible for documenting that
     divergence, the field itself doesn't rename to stay compatible with
-    existing readers."""
+    existing readers.
+
+    `strict_control` and `exclude_masks` go to `random_placements`. Under
+    `strict_control`, a record with no valid control draw gets NaN control
+    fields, not the 0.0 used otherwise, so it can't pass as a zero control
+    effect."""
     x0 = model.preprocess(image).unsqueeze(0).to(device)
     logits0 = model(x0)[0]
     predicted_class = target_class if target_class is not None else int(torch.argmax(logits0).item())
@@ -348,7 +390,9 @@ def compute_faithfulness(
     p_masked = F.softmax(logits_masked, dim=0)[predicted_class].item()
     delta_logit = (logits0[predicted_class] - logits_masked[predicted_class]).item()
 
-    random_masks, n_fallbacks = random_placements(mask, rng, n_draws=n_random_draws)
+    random_masks, n_fallbacks = random_placements(
+        mask, rng, n_draws=n_random_draws, exclude_masks=exclude_masks, strict=strict_control
+    )
     random_deltas = []
     for rmask in random_masks:
         r_image = mask_region(image, rmask, strategy=fill_strategy, rng=rng)
@@ -358,8 +402,9 @@ def compute_faithfulness(
         random_deltas.append(p0 - p_r)
 
     delta_p = p0 - p_masked
-    random_mean = float(np.mean(random_deltas)) if random_deltas else 0.0
-    random_std = float(np.std(random_deltas)) if random_deltas else 0.0
+    no_control = float("nan") if strict_control else 0.0
+    random_mean = float(np.mean(random_deltas)) if random_deltas else no_control
+    random_std = float(np.std(random_deltas)) if random_deltas else no_control
     z_score = (delta_p - random_mean) / (random_std + 1e-8)
 
     return FaithfulnessResult(
@@ -375,6 +420,7 @@ def compute_faithfulness(
         random_delta_p_std=random_std,
         z_score=z_score,
         n_random_fallbacks=n_fallbacks,
+        n_random_valid=len(random_deltas),
     )
 
 
