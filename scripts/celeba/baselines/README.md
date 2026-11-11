@@ -45,3 +45,16 @@ python scripts/celeba/baselines/celeba_soft.py $D/soft_full.csv && python script
 EXTRA="ConceptSAE|$D/sae.csv|score;ConceptSHAP signed|$D/cshap.csv|shap_logit;EAC|$D/eac.csv|score;CARDS soft|$D/soft.csv|soft" \
   python scripts/celeba/baselines/score_paper_gt.py $D/paper_gt_scores.csv
 ```
+
+## Local (per-image) attribution, ResNet18
+Extends the official-train local experiment
+(`scripts/celeba/analysis/local_attribution_comparison_celeba_official_train.py`, which gives CARDS and TCAV) with
+soft CARDS (`local_soft.py`), EAC (`local_eac.py`) and ConceptSAE (`local_sae.py`, needs `concept_sae.py`'s saved
+`.pt`). Records: `CARDS_LOCAL_SET=present` (the clean ground truth) or `absent` (the concept-absent images of the
+paper's local figures); all scripts shard with `SHARD`/`NSHARDS` (`local_common.py`). Sol job:
+`sol/run_local.sh` (header lists the four submissions). Then:
+- `score_local.py OUT_DIR`: per-image Spearman rho vs the ground-truth delta_p (image-bootstrap CI), hit rates
+  (per concept and task, present + absent ranked by |score|: share of the top N present and of the bottom N absent,
+  N = 3, 5, 10) and AUROC of |score| for present vs absent.
+- `plot_local_all.py OUT_DIR [CONCEPT ...]`: the paper's top-3 / bottom-3 grids with every method, one per
+  (concept, task), hit counts in the row labels.

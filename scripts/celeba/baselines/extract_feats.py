@@ -15,23 +15,21 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-sys.path.insert(0, "src"); sys.path.insert(0, "scripts/celeba/ground_truth"); sys.path.insert(0, "scripts/celeba/run")
-from run_cards_celeba_masking_hybrid_official_val_zscore import build_clean_official_val_paths
-from run_celeba_official_train_faithfulness import (
+sys.path.insert(0, "src"); sys.path.insert(0, "scripts/celeba/run")
+from run_cards_celeba_masking_hybrid_official_val_zscore import (
     CELEBA_ROOT,
-    DEVICE,
-    official_train_preprocess,
+    build_clean_official_val_paths,
 )
 
 sys.path.insert(0, str(Path(__file__).parent))
-from black_boxes import ARCH, FEAT_CACHE, feats, head, load
+from black_boxes import ARCH, DEVICE, FEAT_CACHE, PREPROCESS, feats, head, load
 
 OUT = FEAT_CACHE
 IMG = CELEBA_ROOT / "img_align_celeba"
 
 
 class DS(Dataset):
-    def __init__(self, files): self.files, self.t = files, official_train_preprocess()
+    def __init__(self, files): self.files, self.t = files, PREPROCESS
     def __len__(self): return len(self.files)
     def __getitem__(self, i): return self.t(Image.open(IMG / self.files[i]).convert("RGB"))
 

@@ -34,14 +34,13 @@ import torch
 from PIL import Image
 
 sys.path.insert(0, "src"); sys.path.insert(0, "scripts/celeba/run")
-from run_cards_celeba_masking_hybrid_official_train import CELEBA_ROOT
+from run_cards_celeba_masking_hybrid_official_val_zscore import CELEBA_HQ_ROOT, CELEBA_ROOT
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 
 from cards.data.celeba import load_celebamask_hq_image_paths, load_celebamask_hq_mask
 from cards.data.celeba_attributes import ATTRIBUTE_TO_REGIONS, GROUNDABLE_CONCEPTS
 
-sys.path.insert(0, "scripts/celeba/ground_truth")
-from run_celeba_official_train_faithfulness import CELEBA_HQ_ROOT as HQ
+HQ = CELEBA_HQ_ROOT
 
 sys.path.insert(0, str(Path(__file__).parent))
 from black_boxes import ARCH, load

@@ -84,6 +84,8 @@ def main():
                 wd = float(W[p] @ d)
                 w.writerow([t, c, j, f"{auc[j, n]:.4f}", int(Yv[:, n].sum()), float(zv[Yv[:, n], j].mean() * wd), wd])
             print(f"  {c:20s} latent {j:4d} AUROC {auc[j, n]:.3f}", flush=True)
+    latents = {c: int(auc[:, n].argmax()) for n, c in enumerate(GROUNDABLE_CONCEPTS)}
+    torch.save({"state": sae.state_dict(), "k": K, "latents": latents}, OUT.with_suffix(".pt"))  # for local_sae.py
     print("done", flush=True)
 
 

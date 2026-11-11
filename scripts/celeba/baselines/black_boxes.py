@@ -15,8 +15,13 @@ from pathlib import Path
 import torch
 import torch.nn.functional as Fn
 from torch import nn
+from torchvision import transforms
 from torchvision.models import convnext_tiny, resnet18, vit_b_16
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# Evaluation transform of all three classifiers (the val transform of their training scripts).
+PREPROCESS = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(),
+                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 ARCH = os.environ.get("CARDS_ARCH", "resnet18")
 CKPT_DIR = Path(os.environ.get("CARDS_CKPT_DIR", "trained_models_new/celeba"))
 CKPT = {"resnet18": "resnet18_official_train_attractive_male.pt",
@@ -24,6 +29,7 @@ CKPT = {"resnet18": "resnet18_official_train_attractive_male.pt",
         "convnext": "convnext_tiny_official_train_attractive_male.pt"}
 if ARCH not in CKPT:
     raise ValueError(f"CARDS_ARCH must be one of {sorted(CKPT)}, got {ARCH!r}")
+HOOK_LAYER = {"resnet18": "layer4", "vit": "encoder.layers.encoder_layer_11", "convnext": "features.7"}[ARCH]  # TCAV
 SUFFIX = {"resnet18": "", "vit": "_vit", "convnext": "_convnext"}[ARCH]  # results-file suffix used by main's pipeline
 FEAT_CACHE = Path(os.environ.get("CARDS_FEAT_CACHE", f"results/baselines/feat_cache{SUFFIX}"))
 
