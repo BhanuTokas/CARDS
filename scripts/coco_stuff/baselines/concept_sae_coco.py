@@ -1,6 +1,6 @@
-"""ConceptSAE baseline on COCO-Stuff ResNet18 (port of scripts/celeba/baselines/concept_sae.py). argv[1] = out CSV.
+"""ConceptSAE baseline on COCO-Stuff (env CARDS_ARCH = resnet18|vit|convnext; port of scripts/celeba/baselines/concept_sae.py). argv[1] = out CSV.
 Design copied from CelebA, fixed before seeing any ground-truth correlation:
-  - TopK SAE (Gao et al. 2024) on the 512-d avgpool features of every pool image; 4096 latents, k=32, unit-norm decoder
+  - TopK SAE (Gao et al. 2024) on the pooled (head-input) features of every pool image (512-d ResNet18, 768-d ViT/ConvNeXt); 4096 latents, k=32, unit-norm decoder
     columns, Adam lr 4e-4, batch 4096, 60 epochs, seed 0.
   - Naming: each concept gets the latent with the highest AUROC against its image-level label (supervised naming,
     favours the baseline; labels = Grounding DINO detection, the same images the ground truth is measured on).

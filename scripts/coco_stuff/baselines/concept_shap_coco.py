@@ -1,7 +1,7 @@
-"""ConceptSHAP baseline (Yeh et al., NeurIPS 2020) on COCO-Stuff ResNet18 layer4 maps (7x7x512); port of
+"""ConceptSHAP baseline (Yeh et al., NeurIPS 2020) on COCO-Stuff last-stage maps (7x7xd; env CARDS_ARCH selects resnet18|vit|convnext); port of
 scripts/celeba/baselines/concept_shap.py. argv[1] = out CSV. Design copied from CelebA, fixed before seeing any GT correlation:
   - m=40 concept vectors on layer4 patch features; concept score per patch = TH(cos(phi_p, c_j), beta=0.2);
-    g = per-patch MLP m->500->512 (ReLU), then the model's own avgpool + 20-way fc.
+    g = per-patch MLP m->500->d (ReLU), then the model's own avgpool + 20-way fc.
   - Loss = BCE against the model's own hard predictions (logit>0, all 20 classes) - lambda*(coherence - diversity),
     lambda=0.1, coherence = mean top-K (K=32) patch cosines per concept in the batch, diversity = mean pairwise cos(c_j,c_k).
     Trained on the fixed random 40k pool images; Adam 1e-3, batch 256, 10 epochs, seed 0.
@@ -36,12 +36,12 @@ NC = len(CLASSES)
 torch.manual_seed(0); rng = np.random.default_rng(0)
 
 
-def patches(maps):  # (N,512,7,7) -> (N,49,512)
+def patches(maps):  # (N,d,7,7) -> (N,49,d)
     return maps.flatten(2).transpose(1, 2)
 
 
 class CShap(torch.nn.Module):
-    def __init__(self, d=512):
+    def __init__(self, d=512):  # d = head input width of the chosen black box
         super().__init__()
         self.C = torch.nn.Parameter(torch.randn(d, M) * 0.05)
         self.g = torch.nn.Sequential(torch.nn.Linear(M, 500), torch.nn.ReLU(), torch.nn.Linear(500, d), torch.nn.ReLU())

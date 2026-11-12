@@ -1,4 +1,5 @@
-"""Shared pieces for the COCO-Stuff ConceptSAE / ConceptSHAP / EAC baselines (ResNet18 black box, 20-class BCE head).
+"""Shared pieces for the COCO-Stuff ConceptSAE / ConceptSHAP / EAC baselines. The black box is chosen with env
+CARDS_ARCH in {resnet18 (default), vit, convnext} (20-class BCE head each), mirroring scripts/celeba/baselines/black_boxes.py.
 
 Image-level concept labels come from the ground-truth pipeline itself: an image is concept-positive when Grounding DINO
 detected the concept in it (a row exists in coco_stuff_faithfulness.csv). The pool is every COCO train2017 image with
@@ -25,8 +26,13 @@ BRODEN_ROOT = Path(os.environ.get("BRODEN_ROOT", "/scratch/rnair21/LLMConceptEdi
 RESULTS = Path(os.environ.get("CARDS_RESULTS_DIR", "results/coco_stuff"))
 FAITH_CSV = RESULTS / "coco_stuff_faithfulness.csv"
 COUNTS_CSV = RESULTS / "coco_stuff_faithfulness_detection_counts.csv"
-FEAT_CACHE = Path(os.environ.get("CARDS_FEAT_CACHE", str(RESULTS / "baselines" / "feat_cache")))
+ARCH = os.environ.get("CARDS_ARCH", "resnet18")
+BACKBONE = {"resnet18": "coco_stuff", "vit": "coco_stuff_vit_b_16", "convnext": "coco_stuff_convnext_tiny"}
+if ARCH not in BACKBONE:
+    raise ValueError(f"CARDS_ARCH must be one of {sorted(BACKBONE)}, got {ARCH!r}")
+SUFFIX = {"resnet18": "", "vit": "_vit", "convnext": "_convnext"}[ARCH]
 OUT_DIR = RESULTS / "baselines"
+FEAT_CACHE = Path(os.environ.get("CARDS_FEAT_CACHE", str(OUT_DIR / f"feat_cache{SUFFIX}")))
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MIN_FAITH_IMAGES = 100
 DROPPED = {
@@ -53,7 +59,7 @@ def pool_paths() -> list[str]:
 
 def concept_labels(paths: list[str], concepts: list[str]) -> np.ndarray:
     """(N, n_concepts) bool: concept detected in image. Streams the 2.6 GB faithfulness CSV once, cached next to features."""
-    cache = FEAT_CACHE / "concept_labels.npz"
+    cache = OUT_DIR / "concept_labels.npz"  # model-independent: shared by every architecture
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
         if list(z["concepts"]) == concepts and len(z["paths"]) == len(paths):
@@ -65,18 +71,34 @@ def concept_labels(paths: list[str], concepts: list[str]) -> np.ndarray:
         for c, p in zip(chunk["concept_name"], chunk["image_path"]):
             if c in cidx and p in pidx:
                 Y[pidx[p], cidx[c]] = True
-    FEAT_CACHE.mkdir(parents=True, exist_ok=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(cache, labels=Y, concepts=np.array(concepts), paths=np.array(paths))
     return Y
 
 
 def load_black_box():
-    """(native ResNet18 with 20-way fc, preprocess). Only ResNet18 is wired here; ViT/ConvNeXt would need their own feats()."""
-    spec = BACKBONES["coco_stuff"]
+    """(native 20-way model for CARDS_ARCH, its preprocess)."""
+    spec = BACKBONES[BACKBONE[ARCH]]
     return spec.load_native().to(DEVICE).eval(), spec.preprocess
 
 
-def resnet_feats(m, x):
-    """(pooled (N,512), layer4 maps (N,512,7,7)); head = m.fc."""
-    f = m.layer4(m.layer3(m.layer2(m.layer1(m.maxpool(m.relu(m.bn1(m.conv1(x))))))))
-    return f.mean((2, 3)), f
+def head(m: torch.nn.Module) -> torch.nn.Linear:
+    """The final 20-way Linear."""
+    return {"resnet18": lambda: m.fc, "vit": lambda: m.heads.head, "convnext": lambda: m.classifier[2]}[ARCH]()
+
+
+def feats(m: torch.nn.Module, x: torch.Tensor):
+    """(pooled (N,d), maps (N,d,7,7)); pooled is exactly the input of head(m).
+      resnet18: layer4 maps; pooled = spatial mean.
+      vit:      final encoder tokens (after encoder.ln); pooled = CLS token; maps = the 14x14 patch tokens average-pooled 2x2 to 7x7.
+      convnext: features maps; pooled = avgpool -> LayerNorm2d -> flatten.
+    All three give ConceptSHAP a 49-patch grid."""
+    if ARCH == "resnet18":
+        f = m.layer4(m.layer3(m.layer2(m.layer1(m.maxpool(m.relu(m.bn1(m.conv1(x))))))))
+        return f.mean((2, 3)), f
+    if ARCH == "vit":
+        t = m.encoder(torch.cat([m.class_token.expand(len(x), -1, -1), m._process_input(x)], 1))
+        g = t[:, 1:].transpose(1, 2).reshape(len(x), m.hidden_dim, 14, 14)
+        return t[:, 0], torch.nn.functional.avg_pool2d(g, 2)
+    f = m.features(x)
+    return m.classifier[1](m.classifier[0](m.avgpool(f))), f

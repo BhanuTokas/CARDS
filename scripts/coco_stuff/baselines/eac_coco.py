@@ -1,11 +1,11 @@
 # ruff: noqa: SIM115
-"""Explain Any Concept (EAC, Sun et al. 2023) on COCO-Stuff ResNet18; port of scripts/celeba/baselines/celeba_eac.py.
+"""Explain Any Concept (EAC, Sun et al. 2023) on COCO-Stuff; black box = env CARDS_ARCH (resnet18 default, vit, convnext); port of scripts/celeba/baselines/celeba_eac.py.
 Run from the repo root with Meta's segment-anything and GroundingDINO importable and weights/ populated (the same files
 scripts/coco_stuff/build/compute_coco_stuff_faithfulness.py uses). argv[1] = SAM checkpoint, argv[2] = output CSV.
 env EAC_LIMIT=n images (smoke test), N_PER_CONCEPT (default 20), MC (default 50000).
 
 EAC procedure identical to CelebA: SAM ViT-H automatic segments at the model's 224 px input, black fill in raw pixel
-space, PIE surrogate = Linear(n_segments, 512) + the model's frozen fc, BCE on the class probability, SGD lr .008 /
+space, PIE surrogate = Linear(n_segments, d) + the model's frozen 20-way head, BCE on the class probability, SGD lr .008 /
 momentum .9 / batch 100 / 50 epochs, 2500 Bernoulli(.5) subsets, MC Shapley coalitions. One surrogate per class (20),
 targets P(class) = sigmoid(logit).
 
@@ -30,7 +30,7 @@ import torch
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent)); sys.path.insert(0, "scripts/coco_stuff/build")
-from coco_common import CLASSES, DEVICE, FEAT_CACHE, concept_list, load_black_box
+from coco_common import ARCH, CLASSES, DEVICE, concept_labels, concept_list, head, load_black_box, pool_paths
 from compute_coco_stuff_faithfulness import (  # noqa: E402
     BOX_THRESHOLD, GDINO_CKPT, GDINO_CONFIG, NMS_IOU, SAM_CKPT, TEXT_THRESHOLD, _match_phrase,
 )
@@ -141,14 +141,15 @@ def main():
     import groundingdino.datasets.transforms as T
     from segment_anything import SamAutomaticMaskGenerator, SamPredictor, sam_model_registry
 
-    d = torch.load(FEAT_CACHE / "pooled.pt", weights_only=False)
-    paths, concepts, Y = d["paths"], list(d["concepts"]), d["labels"].numpy()
+    paths, concepts = pool_paths(), concept_list()  # model-independent: same images and labels for every black box
+    Y = concept_labels(paths, concepts)
     rng = np.random.default_rng(SEED); chosen = set()
     for n in range(len(concepts)):
         pos = np.where(Y[:, n])[0]; chosen.update(rng.choice(pos, min(N_PER_CONCEPT, len(pos)), replace=False).tolist())
     chosen = sorted(chosen)[:limit] if limit else sorted(chosen)
     print(f"{len(chosen)} images", flush=True)
-    model, _ = load_black_box(); w, b = model.fc.weight.detach(), model.fc.bias.detach()
+    model, _ = load_black_box(); w, b = head(model).weight.detach(), head(model).bias.detach()
+    print("black box:", ARCH, flush=True)
     gtf = T.Compose([T.RandomResize([800], max_size=1333), T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
     sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt).to(DEVICE)
     sgen, spred = SamAutomaticMaskGenerator(sam), SamPredictor(sam)
