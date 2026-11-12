@@ -52,8 +52,10 @@ from cards.validation.broden_faithfulness import mask_region
 
 BASELINE_L = 196
 TOL = 1e-3
-SCORES_CSV = RESULTS_DIR / "patch_count_ablation_scores.csv"
-SUMMARY_CSV = RESULTS_DIR / "patch_count_ablation_summary.csv"
+SUFFIX = os.environ.get("OUT_SUFFIX", "")  # e.g. _dz keeps the existing output files untouched
+SCORES_CSV = RESULTS_DIR / f"patch_count_ablation_scores{SUFFIX}.csv"
+SUMMARY_CSV = RESULTS_DIR / f"patch_count_ablation_summary{SUFFIX}.csv"
+PER_IMAGE_CSV = RESULTS_DIR / f"patch_count_per_image{SUFFIX}.csv"  # L, concept, class, image idx, delta_logit
 
 
 @dataclass(frozen=True)
@@ -112,7 +114,7 @@ def build(variant: Variant):
     return encoder, pool
 
 
-def run_variant(variant: Variant, raw_model, preprocess, concepts) -> dict[tuple[str, str], float]:
+def run_variant(variant: Variant, raw_model, preprocess, concepts, per_image: list) -> dict[tuple[str, str], float]:
     print(f"\n{'=' * 20} L={variant.L} ({variant.model_name}, pooled_grid={variant.pooled_grid}) {'=' * 20}", flush=True)
     encoder, pool = build(variant)
     text_center = compute_text_center(GENERIC_REFERENCE_CONCEPTS, encoder)
@@ -147,6 +149,7 @@ def run_variant(variant: Variant, raw_model, preprocess, concepts) -> dict[tuple
                 lg = raw_model(px)
             for k, cls in enumerate(COCO_STUFF_20_CLASSES):
                 deltas[cls].append((lg[0, k] - lg[1, k]).item())
+                per_image.append((variant.L, concept, cls, int(idx), deltas[cls][-1]))
         for cls in COCO_STUFF_20_CLASSES:
             scores[(concept, cls)] = float(np.mean(deltas[cls])) if deltas[cls] else 0.0
         if (c_i + 1) % 10 == 0:
@@ -172,9 +175,10 @@ def main() -> None:
     faiths = {s: load_faithfulness(FAITH_CSV, s) for s in STRATEGIES}
     reference = load_k50_scores(ALPHA_CSV, alpha=ALPHA)
     all_scores: dict[int, dict] = {}
+    per_image: list[tuple] = []
     summary: list[dict] = []
     for L in order:
-        all_scores[L] = run_variant(VARIANTS[L], raw_model, preprocess, concepts)
+        all_scores[L] = run_variant(VARIANTS[L], raw_model, preprocess, concepts, per_image)
         for strategy in STRATEGIES:
             faith, counts = faiths[strategy]
             rows, mean_rho, mean_sign, pr, pp, pn = evaluate(all_scores[L], faith, counts)
@@ -193,6 +197,8 @@ def main() -> None:
             for l_, sc in all_scores.items():
                 for (c, cls), v in sc.items():
                     w.writerow([l_, c, cls, v])
+        with open(PER_IMAGE_CSV, "w", newline="") as f:
+            w = csv.writer(f); w.writerow(["L", "concept_name", "class_name", "image_idx", "delta_logit"]); w.writerows(per_image)
         fields = ["L", "model_name", "strategy", "class_name", "n_pairs", "spearman_rho", "spearman_p", "sign_agreement",
                   "sign_p", "pooled_rho", "pooled_p", "pooled_n"]
         with open(SUMMARY_CSV, "w", newline="") as f:

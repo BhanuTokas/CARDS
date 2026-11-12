@@ -237,6 +237,8 @@ def main() -> None:
     # --- Per-concept scoring ---
     all_scores: dict[tuple[str, str], float] = {}
     score_rows: list[tuple] = []
+    per_image_rows: list[tuple] = []   # (concept, image idx, class, delta_logit) for Cohen's d
+    suffix = os.environ.get("OUT_SUFFIX", "")   # e.g. _dz keeps the existing score/summary files untouched
 
     for c_i, concept_name in enumerate(concepts):
         t_c     = queries[concept_name]
@@ -283,7 +285,9 @@ def main() -> None:
                 logits = model(torch.cat([pix_orig, pix_masked], dim=0).to(DEVICE))
 
             for cls_i, cls_name in enumerate(COCO_STUFF_20_CLASSES):
-                delta_logits[cls_name].append((logits[0, cls_i] - logits[1, cls_i]).item())
+                d_ = (logits[0, cls_i] - logits[1, cls_i]).item()
+                delta_logits[cls_name].append(d_)
+                per_image_rows.append((concept_name, int(idx), cls_name, d_))
 
         for cls_name in COCO_STUFF_20_CLASSES:
             dl  = delta_logits[cls_name]
@@ -299,12 +303,18 @@ def main() -> None:
             )
 
     # --- Save scores ---
-    out_path = OUT_DIR / f"{backbone_name}_cards_scores.csv"
+    out_path = OUT_DIR / f"{backbone_name}_cards_scores{suffix}.csv"
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["concept_name", "class_name", "raw_score"])
         writer.writerows(score_rows)
     print(f"\nSaved {len(score_rows)} rows -> {out_path}", flush=True)
+    pi_path = OUT_DIR / f"{backbone_name}_cards_per_image{suffix}.csv"
+    with open(pi_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["concept_name", "image_idx", "class_name", "delta_logit"])
+        writer.writerows(per_image_rows)
+    print(f"Saved {len(per_image_rows)} per-image rows -> {pi_path}", flush=True)
 
     # --- Evaluate rho ---
     print("\n=== Faithfulness evaluation ===", flush=True)
@@ -330,7 +340,7 @@ def main() -> None:
                 "pooled_rho": pr, "pooled_p": pp, "pooled_n": pn,
             })
 
-    summary_path = OUT_DIR / f"{backbone_name}_summary.csv"
+    summary_path = OUT_DIR / f"{backbone_name}_summary{suffix}.csv"
     fields = ["backbone", "strategy", "class_name", "n_pairs",
               "spearman_rho", "spearman_p", "sign_agreement", "sign_p",
               "pooled_rho", "pooled_p", "pooled_n"]
