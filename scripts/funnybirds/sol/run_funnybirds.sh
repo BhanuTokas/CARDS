@@ -14,7 +14,8 @@
 #   4 HnS L=1024 alpha=1.5 (selected on training images)   5 HnS L=1024 alpha=2.5 (sensitivity)   6 EAC
 # Each run takes well under 4 h, so submit on htc. From the repo root, after `git pull`:
 #   mkdir -p logs
-#   uv sync --locked --extra tcav --extra perception     # once on the login node (array tasks share .venv)
+#   uv sync --locked --extra tcav --extra perception --extra pcbm     # once on the login node (array tasks share .venv)
+#   (pcbm only for `requests`, which the framework's dataset module imports for its unused render server)
 #   sbatch -p htc scripts/funnybirds/sol/run_funnybirds.sh
 #   sbatch -p htc --array=0 --time=00:30:00 --export=ALL,NR_ITRS=5 scripts/funnybirds/sol/run_funnybirds.sh  # smoke
 # Needs (defaults below, override by env): the dataset at $FUNNYBIRDS_ROOT, a clone of
@@ -57,5 +58,5 @@ case "$T" in
   *) echo "unknown task $T"; exit 1 ;;
 esac
 echo "task $T model=$MODEL nr_itrs=$NR_ITRS args=${ARGS[*]} out=$FUNNYBIRDS_OUT"
-uv run --locked --extra tcav --extra perception python scripts/funnybirds/evaluate.py \
+uv run --locked --extra tcav --extra perception --extra pcbm python scripts/funnybirds/evaluate.py \
   --model "$MODEL" --nr_itrs "$NR_ITRS" "${ARGS[@]}"
