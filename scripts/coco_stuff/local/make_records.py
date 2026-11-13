@@ -27,6 +27,9 @@ from common import COCO_ROOT, OUT, RECORDS, SEED
 MIN_PRESENT = int(os.environ.get("LOCAL_MIN_PRESENT", "100"))  # env overrides only for synthetic smoke tests
 N_PER_SET = int(os.environ.get("LOCAL_N_PER_SET", "100"))
 MIN_CASE = 20
+# Ground-truth variant: the ResNet18 file has delta_p_/delta_logit_ columns per masking strategy (black_mask = the
+# concept's union mask filled black, black_bbox = its boxes); black_mask is the default of the COCO scorers.
+GT_STRATEGY = os.environ.get("LOCAL_GT_STRATEGY", "black_mask")
 CASES = [("greenness", "sports ball"), ("blueness", "sports ball"), ("bottle", "wine glass")]
 
 
@@ -50,9 +53,14 @@ def main():
     print(f"{len(cls_of)} train2017 images with a target class; {len(concepts)} concepts", flush=True)
     detected: dict[str, set[str]] = defaultdict(set)
     gt: dict[tuple[str, str], dict[str, tuple[float, float]]] = defaultdict(dict)
-    cols = ["concept_name", "image_path", "class_name", "delta_p", "delta_logit"]
+    header = pd.read_csv(FAITH_CSV, nrows=0).columns
+    dp_col, dl_col = ((f"delta_p_{GT_STRATEGY}", f"delta_logit_{GT_STRATEGY}") if f"delta_p_{GT_STRATEGY}" in header
+                      else ("delta_p", "delta_logit"))  # the single-strategy format the build script documents
+    print(f"ground truth columns: {dp_col}, {dl_col}", flush=True)
+    cols = ["concept_name", "image_path", "class_name", dp_col, dl_col]
     present_keys = {f"{im}|{k}" for im, ks in cls_of.items() for k in ks}
     for n, ch in enumerate(pd.read_csv(FAITH_CSV, usecols=cols, chunksize=5_000_000)):
+        ch = ch.rename(columns={dp_col: "delta_p", dl_col: "delta_logit"})
         ch = ch[ch["concept_name"].isin(concepts)]
         ch = ch.assign(image=ch["image_path"].str.split(r"[\\/]").str[-1])
         for c, ims in ch.groupby("concept_name")["image"].unique().items():
