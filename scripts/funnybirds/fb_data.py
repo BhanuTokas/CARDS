@@ -60,3 +60,15 @@ def train_image(i: int) -> torch.Tensor:
     r = train_params()[i]
     a = np.asarray(Image.open(ROOT / "train" / str(r["class_idx"]) / f"{i:06d}.png"), dtype=np.float32)[..., :3]
     return torch.from_numpy(a / 255.0).permute(2, 0, 1)
+
+
+class TrainImages(torch.utils.data.Dataset):
+    """Training images by index, for a DataLoader (feature extraction over many images)."""
+    def __init__(self, idx):
+        self.idx = idx
+
+    def __len__(self):
+        return len(self.idx)
+
+    def __getitem__(self, i):
+        return train_image(self.idx[i])

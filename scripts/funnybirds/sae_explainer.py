@@ -47,17 +47,6 @@ class TopKSAE(torch.nn.Module):  # as in scripts/bam/fit_concept_sae_bam.py
         return z @ self.W_dec.T + self.b_dec, z
 
 
-class _TrainImages(torch.utils.data.Dataset):
-    def __init__(self, idx):
-        self.idx = idx
-
-    def __len__(self):
-        return len(self.idx)
-
-    def __getitem__(self, i):
-        return fb_data.train_image(self.idx[i])
-
-
 class SAEExplainer:
     def __init__(self, model, device="cuda"):
         self.device, self.net = device, model.model
@@ -122,7 +111,7 @@ class SAEExplainer:
         return torch.flatten(n.avgpool(x), 1).float()
 
     def _features(self, idx):
-        dl = torch.utils.data.DataLoader(_TrainImages(idx), batch_size=128,
+        dl = torch.utils.data.DataLoader(fb_data.TrainImages(idx), batch_size=128,
                                          num_workers=int(os.environ.get("SLURM_CPUS_PER_TASK", 4)))
         out = []
         for b, x in enumerate(dl):

@@ -8,8 +8,10 @@ Explainers:
   HnSTrueMask                            HnS with the true part masks (oracle localization; isolates the fill)
   EAC                                    Explain Any Concept (eac_explainer.py; needs segment-anything + SAM_CKPT)
   TCAV                                   local TCAV at layer3, part CAVs (tcav_explainer.py)
+  TCAV_variant                           local TCAV at layer3, CAV of the class's own part variant
   PCBM, PCBM_CLIP_RN50, PCBM_SigLIP      post-hoc CBM, conventional / CLIP-RN50 / SigLIP concepts (pcbm_explainer.py)
   ConceptSAE                             TopK SAE on the pooled features, latents named by variant (sae_explainer.py)
+  ConceptSHAP                            40 concept vectors on layer4 patches, per-image Shapley (cshap_explainer.py)
 
 Final row as in the framework: the threshold maximizing mean(CSDC, PC, DC) + D picks CSDC/PC/DC/D. Also reported:
   D_parts  distractibility with background objects left out of every explanation (HnS never scores background
@@ -199,8 +201,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="resnet50", choices=list(CHECKPOINTS))
     ap.add_argument("--explainer", required=True,
-                    choices=["InputXGradient", "IntegratedGradients", "HnS", "HnSTrueMask", "EAC", "TCAV", "PCBM",
-                             "PCBM_CLIP_RN50", "PCBM_SigLIP", "ConceptSAE"])
+                    choices=["InputXGradient", "IntegratedGradients", "HnS", "HnSTrueMask", "EAC", "TCAV", "TCAV_variant", "PCBM",
+                             "PCBM_CLIP_RN50", "PCBM_SigLIP", "ConceptSAE", "ConceptSHAP"])
     ap.add_argument("--nr_itrs", type=int, default=2501, help="framework default: all test images")
     ap.add_argument("--no-demean", action="store_true")
     ap.add_argument("--no-orth", action="store_true")
@@ -220,9 +222,9 @@ def main():
     elif a.explainer == "IntegratedGradients":
         explainer = CaptumAttributionExplainer(IntegratedGradients(model),
                                                baseline=torch.zeros((1, 3, 256, 256)).to(device))
-    elif a.explainer == "TCAV":
+    elif a.explainer.startswith("TCAV"):
         from tcav_explainer import TCAVExplainer
-        explainer = TCAVExplainer(model, device=device)
+        explainer = TCAVExplainer(model, device=device, variant=a.explainer == "TCAV_variant")
     elif a.explainer.startswith("PCBM"):
         from pcbm_explainer import PCBMExplainer
         variant = {"PCBM": "conventional", "PCBM_CLIP_RN50": "clip_rn50", "PCBM_SigLIP": "siglip"}[a.explainer]
@@ -230,6 +232,9 @@ def main():
     elif a.explainer == "ConceptSAE":
         from sae_explainer import SAEExplainer
         explainer = SAEExplainer(model, device=device)
+    elif a.explainer == "ConceptSHAP":
+        from cshap_explainer import CShapExplainer
+        explainer = CShapExplainer(model, device=device)
     elif a.explainer == "EAC":
         sys.path.insert(0, str(SEGMENT_ANYTHING))
         from eac_explainer import EACExplainer
@@ -280,7 +285,7 @@ def main():
             "framework": str(FRAMEWORK), "data": str(ROOT), "host": os.environ.get("COMPUTERNAME", "")}
     if hasattr(explainer, "fidelity"):  # PCBM surrogate: held-out training-image agreement with the black box
         meta |= {"pcbm_fidelity": explainer.fidelity, "pcbm_lam": explainer.lam}
-    meta |= getattr(explainer, "meta", {})  # ConceptSAE: reconstruction quality and latent naming
+    meta |= getattr(explainer, "meta", {})  # ConceptSAE / ConceptSHAP: quality checks and naming
     (OUT / f"{stem}.json").write_text(json.dumps({"final": final, "per_threshold": per_t, "meta": meta}, indent=1))
     if hasattr(explainer, "log") and explainer.log:
         with open(OUT / f"{stem}_{'eac' if a.explainer == 'EAC' else 'hns'}_log.csv", "w", newline="") as f:
