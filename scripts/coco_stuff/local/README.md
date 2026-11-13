@@ -39,6 +39,18 @@ fidelity scores and top-3 / bottom-3 grids for every method.
   - Hit@3/5/10.
   - AUROC and AP of |score|, present vs absent.
 
+## The paper's example pairs
+
+Set `LOCAL_PAIRS` to `class:concept;…` to use exactly those pairs instead of the selection rule. For the main-text
+and appendix figures of the ICLR submission:
+
+```
+apple:blackness;skateboard:blurriness;apple:basket;skateboard:dog;apple:board;apple:flowerpot;
+car:bicycle;handbag:bicycle;handbag:dog;keyboard:book;skis:blueness;tennis racket:field
+```
+
+The paper's "black", "blurry" and "blue" are the Broden concepts `blackness`, `blurriness` and `blueness`.
+
 ## Sol
 
 Run `uv sync --locked` on the login node first. Then submit the dependency chain in the header of

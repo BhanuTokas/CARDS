@@ -19,6 +19,8 @@
 #   S=$(sbatch -p htc --parsable --dependency=afterok:$P              --export=ALL,METHOD=sae   scripts/coco_stuff/local/sol/run_local.sh)
 #   sbatch -p htc --dependency=afterok:$C:$T:$E:$S --export=ALL,METHOD=score scripts/coco_stuff/local/sol/run_local.sh
 # Smoke test: same, with OUT pointing to a scratch folder and LOCAL_LIMIT=20 on cards/eac (the prep step is full size).
+# Chosen pairs instead of the selection rule (e.g. the paper's example figures): export LOCAL_PAIRS="class:concept;..."
+# and a separate OUT before the same chain (fewer shards suffice: --array=0-1 for cards, 0-3 for eac).
 # Inputs (env, defaults in brackets): COCO_ROOT, BRODEN_ROOT [coco_common.py defaults]; CARDS_RESULTS_DIR
 # [results/coco_stuff] with coco_stuff_faithfulness.csv + _detection_counts.csv; GT_MASKS_DIR [$CARDS_RESULTS_DIR/gt_masks];
 # CARDS_FEAT_CACHE [$CARDS_RESULTS_DIR/baselines/feat_cache; extract_feats_coco.py runs if pooled.pt is missing];

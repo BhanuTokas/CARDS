@@ -5,7 +5,7 @@ Pairs: concepts = the 103 scored concepts (coco_common.concept_list()); a pair i
 class-present images have the concept detected. Per class, three pairs (deduplicated): the largest mean ground truth
 (mean delta_p over those images), the smallest, and the most detected images; plus the three cases of the existing
 COCO local figures (greenness / blueness x sports ball, bottle x wine glass) when they have >= 20 images. The rule is
-fixed before any method is scored on these records.
+fixed before any method is scored on these records. env LOCAL_PAIRS replaces the rule with an explicit pair list.
 Records per pair: N_PER_SET present (random, seeded) and N_PER_SET absent (class-present pool images where the concept
 was not detected).
 
@@ -31,6 +31,11 @@ MIN_CASE = 20
 # concept's union mask filled black, black_bbox = its boxes); black_mask is the default of the COCO scorers.
 GT_STRATEGY = os.environ.get("LOCAL_GT_STRATEGY", "black_mask")
 CASES = [("greenness", "sports ball"), ("blueness", "sports ball"), ("bottle", "wine glass")]
+# env LOCAL_PAIRS="class:concept;class:concept;..." replaces the selection rule by exactly these pairs (any number of
+# present images), e.g. to recreate the paper's example figures.
+PAIRS = [tuple(p.split(":")) for p in os.environ.get("LOCAL_PAIRS", "").split(";") if p.strip()]
+for _k, _c in PAIRS:
+    assert _k in CLASSES, f"unknown class {_k!r} in LOCAL_PAIRS"
 
 
 def class_images() -> dict[str, set[str]]:
@@ -71,14 +76,20 @@ def main():
         print(f"  chunk {n}: {len(gt)} (concept, class) pairs so far", flush=True)
     stats = {p: (len(v), float(np.mean([x[0] for x in v.values()]))) for p, v in gt.items()}
     chosen: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for k in CLASSES:
+    if PAIRS:  # explicit pair list instead of the selection rule
+        for k, c in PAIRS:
+            if (c, k) in stats:
+                chosen[c, k].append("requested")
+            else:
+                print(f"  {c} x {k}: no class-present image with the concept detected; skipped", flush=True)
+    for k in CLASSES if not PAIRS else []:
         el = [(p, s) for p, s in stats.items() if p[1] == k and s[0] >= MIN_PRESENT]
         if not el:
             print(f"  {k}: no eligible pair"); continue
         chosen[max(el, key=lambda x: x[1][1])[0]].append("max_gt")
         chosen[min(el, key=lambda x: x[1][1])[0]].append("min_gt")
         chosen[max(el, key=lambda x: (x[1][0], x[0]))[0]].append("most_images")
-    for p in CASES:
+    for p in CASES if not PAIRS else []:
         if stats.get(p, (0,))[0] >= MIN_CASE:
             chosen[p].append("paper_case")
     pairs = sorted(chosen)
