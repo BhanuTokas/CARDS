@@ -6,13 +6,14 @@
 #SBATCH -c 8
 #SBATCH --mem=32G
 #SBATCH --time=04:00:00
-#SBATCH --array=0-10
+#SBATCH --array=0-11
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 # FunnyBirds evaluation (scripts/funnybirds/evaluate.py), one run per array task, for $MODEL (default resnet50):
 #   0 InputXGradient   1 IntegratedGradients   2 HnS (paper: L=196, alpha=1)   3 HnS with true part masks
 #   4 HnS L=1024 alpha=1.5 (selected on training images)   5 HnS L=1024 alpha=2.5 (sensitivity)   6 EAC
 #   7 TCAV (layer3)   8 PCBM (conventional, 26 variant CAVs)   9 PCBM CLIP-RN50 concepts   10 PCBM SigLIP concepts
+#   11 ConceptSAE (TopK SAE on pooled features, variant-named latents)
 # Each run takes well under 4 h, so submit on htc. From the repo root, after `git pull`:
 #   mkdir -p logs
 #   uv sync --locked --extra tcav --extra perception --extra pcbm     # once on the login node (array tasks share .venv)
@@ -60,6 +61,7 @@ case "$T" in
   8) ARGS=(--explainer PCBM) ;;
   9) ARGS=(--explainer PCBM_CLIP_RN50) ;;
   10) ARGS=(--explainer PCBM_SigLIP) ;;
+  11) ARGS=(--explainer ConceptSAE) ;;
   *) echo "unknown task $T"; exit 1 ;;
 esac
 echo "task $T model=$MODEL nr_itrs=$NR_ITRS args=${ARGS[*]} out=$FUNNYBIRDS_OUT"

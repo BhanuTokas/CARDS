@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from paths import OUT
 
-ORDER = ["InputXGradient", "IntegratedGradients", "TCAV", "PCBM", "PCBM_CLIP_RN50", "PCBM_SigLIP", "EAC", "HnS",
+ORDER = ["InputXGradient", "IntegratedGradients", "TCAV", "PCBM", "PCBM_CLIP_RN50", "PCBM_SigLIP", "ConceptSAE", "EAC", "HnS",
          "HnS_L1024_a1.5", "HnS_L1024_a2.5", "HnSTrueMask"]
 LABEL = {
     "InputXGradient": "Input x Gradient",
@@ -24,6 +24,7 @@ LABEL = {
     "PCBM": "PCBM (conventional, 26 variant CAVs)",
     "PCBM_CLIP_RN50": "PCBM (CLIP-RN50 concepts)",
     "PCBM_SigLIP": "PCBM (SigLIP concepts)",
+    "ConceptSAE": "ConceptSAE (26 variant-named latents)",
     "EAC": "EAC",
     "HnS": "HnS (paper: L=196, alpha=1)",
     "HnS_L1024_a1.5": "HnS (L=1024, alpha=1.5; selected on train)",
@@ -45,6 +46,8 @@ def main():
         label = LABEL.get(key, key)
         if "pcbm_fidelity" in meta:  # surrogate agreement with the black box on held-out training images
             label += f", fidelity {meta['pcbm_fidelity']:.2f}"
+        if "sae_fvu" in meta:  # held-out reconstruction (FVU) and prediction agreement through the SAE
+            label += f", FVU {meta['sae_fvu']:.2f}, agreement {meta['sae_agreement']:.2f}"
         rows.append({"model": meta["model"], "key": key, "method": label,
                      "n_itrs": meta["nr_itrs"], "minutes": round(meta["minutes"], 1)} | final)
     rows.sort(key=lambda r: (r["model"], ORDER.index(r["key"]) if r["key"] in ORDER else 99))
