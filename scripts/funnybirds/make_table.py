@@ -15,10 +15,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from paths import OUT
 
-ORDER = ["InputXGradient", "IntegratedGradients", "EAC", "HnS", "HnS_L1024_a1.5", "HnS_L1024_a2.5", "HnSTrueMask"]
+ORDER = ["InputXGradient", "IntegratedGradients", "TCAV", "PCBM", "PCBM_CLIP_RN50", "PCBM_SigLIP", "EAC", "HnS",
+         "HnS_L1024_a1.5", "HnS_L1024_a2.5", "HnSTrueMask"]
 LABEL = {
     "InputXGradient": "Input x Gradient",
     "IntegratedGradients": "Integrated Gradients",
+    "TCAV": "TCAV (layer3)",
+    "PCBM": "PCBM (conventional, 26 variant CAVs)",
+    "PCBM_CLIP_RN50": "PCBM (CLIP-RN50 concepts)",
+    "PCBM_SigLIP": "PCBM (SigLIP concepts)",
     "EAC": "EAC",
     "HnS": "HnS (paper: L=196, alpha=1)",
     "HnS_L1024_a1.5": "HnS (L=1024, alpha=1.5; selected on train)",
@@ -37,7 +42,10 @@ def main():
         r = json.loads(f.read_text())
         meta, final = r["meta"], r["final"]
         key = f.stem[len(meta["model"]) + 1:]  # explainer[_tag]; model names contain underscores (vit_b_16)
-        rows.append({"model": meta["model"], "key": key, "method": LABEL.get(key, key),
+        label = LABEL.get(key, key)
+        if "pcbm_fidelity" in meta:  # surrogate agreement with the black box on held-out training images
+            label += f", fidelity {meta['pcbm_fidelity']:.2f}"
+        rows.append({"model": meta["model"], "key": key, "method": label,
                      "n_itrs": meta["nr_itrs"], "minutes": round(meta["minutes"], 1)} | final)
     rows.sort(key=lambda r: (r["model"], ORDER.index(r["key"]) if r["key"] in ORDER else 99))
     if not rows:
