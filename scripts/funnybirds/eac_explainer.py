@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 N_SAMPLES, MC, SEED = 2500, 50_000, 0
+QUERY_BATCH = 50  # masked images per forward pass (250 at 256 px through ResNet-50 overflows a 16 GB GPU)
 EPOCHS, BATCH, LR, MOMENTUM = 50, 100, 0.008, 0.9
 
 
@@ -56,8 +57,8 @@ class EACExplainer:
     def _model_probs(self, img, masks, subsets):
         flat = torch.from_numpy(masks.reshape(len(masks), -1)).float().to(self.device)
         out = []
-        for s in range(0, len(subsets), 250):
-            sub = torch.from_numpy(subsets[s:s + 250].astype(np.float32)).to(self.device)
+        for s in range(0, len(subsets), QUERY_BATCH):
+            sub = torch.from_numpy(subsets[s:s + QUERY_BATCH].astype(np.float32)).to(self.device)
             keep = (sub @ flat > 0).float().view(-1, 1, *masks.shape[1:])
             out.append(torch.softmax(self.model(img * keep), 1))
         return torch.cat(out)
