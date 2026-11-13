@@ -22,7 +22,7 @@ adds them to the paper's COCO-Stuff shortcut table and figure.
   reproduce the paper's column: .82, −.42, −.28, −.62, −.63.
 - **Sol.** `sol/run.sh` runs in this order:
   1. `labels`: the shared concept-label cache, run once.
-  2. `feats sae shap`: an 11-task array on `htc`.
+  2. `feats sae shap`: an 11-task array.
   3. EAC: rate 0 first, which fills the shared SAM cache, then rates 10–100. EAC is resumable.
 
   The header of `sol/run.sh` has the exact commands.

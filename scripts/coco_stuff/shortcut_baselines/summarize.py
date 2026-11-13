@@ -46,6 +46,7 @@ STYLE = {
 }
 FIGURES = {"shortcut_all_methods": list(STYLE),
            "shortcut_new_baselines": ["Masking hybrid", "ConceptSAE", "EAC", "ConceptSHAP (signed)", "ConceptSHAP (original)"]}
+ALPHA = 0.6  # method lines semi-transparent so crossings stay readable; the gap line stays opaque
 GAP_COLOR, INK_SECONDARY, INK_MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#fcfcfb"
 
 
@@ -99,7 +100,7 @@ def plot(gap: pd.Series, attr: pd.DataFrame, methods: list[str], stem: str):
         y = attr[m]; y = (y - y.min()) / ((y.max() - y.min()) or 1.0)
         lab, col, mk = STYLE[m]
         lines += ax_attr.plot(RATES, y.values, color=col, linewidth=2.8, marker=mk, markersize=11 if mk == "*" else 9,
-                              markeredgewidth=0, label=lab, zorder=3)
+                              markeredgewidth=0, label=lab, zorder=3, alpha=ALPHA)
     ax_gap.set_xlabel("Shortcut injection rate (%)", color=INK_SECONDARY, fontsize=22)
     ax_gap.set_ylabel("Accuracy gap (clean − shortcut)", color=GAP_COLOR, fontsize=21)
     ax_attr.set_ylabel("Min-max scaled mean |attribution|", color=INK_SECONDARY, fontsize=21)

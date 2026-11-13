@@ -13,11 +13,11 @@
 # submission (METHODS=eac): rate 0 first, which fills the shared SAM cache, then the other 10 rates.
 # Submit from the repo root after `uv sync --locked` on the login node:
 #   mkdir -p logs
-#   L=$(sbatch -p htc --parsable --array=0 --export=ALL,METHODS=labels scripts/coco_stuff/shortcut_baselines/sol/run.sh)
-#   F=$(sbatch -p htc --parsable --dependency=afterok:$L --array=0-10 scripts/coco_stuff/shortcut_baselines/sol/run.sh)
+#   L=$(sbatch --parsable --array=0 --export=ALL,METHODS=labels scripts/coco_stuff/shortcut_baselines/sol/run.sh)
+#   F=$(sbatch --parsable --dependency=afterok:$L --array=0-10 scripts/coco_stuff/shortcut_baselines/sol/run.sh)
 #   E0=$(sbatch --parsable --dependency=afterok:$L --array=0 --time=24:00:00 --export=ALL,METHODS=eac scripts/coco_stuff/shortcut_baselines/sol/run.sh)
 #   sbatch --dependency=afterok:$E0 --array=1-10 --time=24:00:00 --export=ALL,METHODS=eac scripts/coco_stuff/shortcut_baselines/sol/run.sh
-#   smoke: sbatch -p htc --array=0 --time=01:00:00 --export=ALL,METHODS=eac,EAC_LIMIT=3,SHORTCUT_OUT=/scratch/$USER/coco_sc_smoke scripts/coco_stuff/shortcut_baselines/sol/run.sh
+#   smoke: sbatch --array=0 --time=01:00:00 --export=ALL,METHODS=eac,EAC_LIMIT=3,SHORTCUT_OUT=/scratch/$USER/coco_sc_smoke scripts/coco_stuff/shortcut_baselines/sol/run.sh
 # EAC is resumable (per-image rows in eac.csv.images.csv): a task that hits its time limit continues when resubmitted.
 # Then: uv run --locked --extra pcbm-training python scripts/coco_stuff/shortcut_baselines/summarize.py (CPU)
 # Needs: resnet18_coco_stuff_shortcut_{0..100}.pt in $COCO_SHORTCUT_CKPT_DIR [trained_models_new/coco_stuff/shortcut];
