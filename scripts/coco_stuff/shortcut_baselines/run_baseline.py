@@ -51,8 +51,35 @@ if METHOD == "labels":
     print(f"concept labels {y.shape} in {coco_common.OUT_DIR / 'concept_labels.npz'}")
     sys.exit(0)
 
+def stub_groundingdino():
+    """eac_coco.main() imports GroundingDINO unconditionally, but with GT_MASKS_DIR set it uses it only for images
+    without a saved ground-truth mask (none expected: EAC's images are concept-positives of the same faithfulness CSV the
+    masks were saved for). GroundingDINO is not in the uv env, so register placeholders: the imports and the transform
+    setup succeed, and actually needing GroundingDINO raises instead of silently differing from the ground truth."""
+    import types
+
+    def needed(*_a, **_k):
+        raise RuntimeError("an EAC image has no saved mask in GT_MASKS_DIR, so eac_coco.py needs GroundingDINO, which "
+                           "is not installed in this environment; check GT_MASKS_DIR")
+
+    mods = {n: types.ModuleType(n) for n in ("groundingdino", "groundingdino.util", "groundingdino.util.box_ops",
+                                              "groundingdino.util.inference", "groundingdino.datasets",
+                                              "groundingdino.datasets.transforms")}
+    mods["groundingdino.util.inference"].load_model = mods["groundingdino.util.inference"].predict = needed
+    for name in ("Compose", "RandomResize", "ToTensor", "Normalize"):  # built once at startup, used only with GroundingDINO
+        setattr(mods["groundingdino.datasets.transforms"], name, lambda *_a, **_k: None)
+    for n, m in mods.items():
+        if "." in n:
+            parent, child = n.rsplit(".", 1)
+            setattr(mods[parent], child, m)
+    sys.modules.update(mods)
+
+
 assert CKPT.exists(), f"missing {CKPT}"
 coco_common.load_black_box = load_shortcut
+if METHOD == "eac":
+    assert os.environ.get("GT_MASKS_DIR"), "EAC needs GT_MASKS_DIR (GroundingDINO is replaced by placeholders)"
+    stub_groundingdino()
 script, args = {"feats": ("extract_feats_coco.py", []), "sae": ("concept_sae_coco.py", [OUT / "sae.csv"]),
                 "shap": ("concept_shap_coco.py", [OUT / "shap.csv"]),
                 "eac": ("eac_coco.py", [*sys.argv[3:4], OUT / "eac.csv"])}[METHOD]
