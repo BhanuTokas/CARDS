@@ -6,7 +6,9 @@ center-cropped to a square instead of stretched (COCO images are not square). Ti
 absent records) are broken by a fixed random order, not file order, which would put present records first.
 
 argv[1] (optional, default $COCO_LOCAL_OUT) = folder with local_merged.csv (score_local.py); grids go to
-argv[1]/grids/{concept}_{class}.png. Optional argv[2:] = concept names to draw (default: all)."""
+argv[1]/grids/{concept}_{class}.png. Optional argv[2:] = concept names to draw (default: all).
+env LOCAL_PLOT_METHODS = comma-separated rows to draw (default all four), e.g. "cards,tcav_sign,sae" to leave out EAC,
+whose regions are the ground truth's own concept masks; env LOCAL_GRIDS = output subfolder name (default grids)."""
 import csv
 import os
 import random
@@ -20,8 +22,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import image_path
 
 N = 3
-PLOT_METHODS = ["cards", "tcav_sign", "eac", "sae"]
-DISPLAY = {"cards": "Hide and Seek (Ours)", "tcav_sign": "TCAV", "eac": "EAC", "sae": "ConceptSAE"}  # TCAV = layer3
+DISPLAY = {"cards": "Hide and Seek (Ours)", "tcav_sign": "TCAV", "tcav_dd": "TCAV", "tcav4_dd": "TCAV (layer4)",
+           "eac": "EAC", "sae": "ConceptSAE"}  # tcav_sign / tcav_dd = layer3 sign score / directional derivative
+PLOT_METHODS = [m.strip() for m in os.environ.get("LOCAL_PLOT_METHODS", "cards,tcav_sign,eac,sae").split(",") if m.strip()]
+assert PLOT_METHODS and set(PLOT_METHODS) <= set(DISPLAY), f"LOCAL_PLOT_METHODS must be from {sorted(DISPLAY)}"
+EXPLICIT = "LOCAL_PLOT_METHODS" in os.environ  # default list: drop methods that were not run (e.g. no EAC)
+GRIDS = os.environ.get("LOCAL_GRIDS", "grids")
 BG, PANEL_BG, LABEL, SUB, DIVIDER, BORDER = (250, 250, 250), (255, 255, 255), (30, 30, 30), (90, 90, 90), (0, 0, 0), (60, 60, 60)
 
 
@@ -86,18 +92,22 @@ def main():
     only = set(sys.argv[2:])
     groups = defaultdict(list)
     with open(d / "local_merged.csv", newline="") as f:
-        for r in csv.DictReader(f):
+        rd = csv.DictReader(f)
+        missing = [m for m in PLOT_METHODS if m not in rd.fieldnames]
+        assert not (EXPLICIT and missing), f"not in local_merged.csv: {missing}"
+        methods = [m for m in PLOT_METHODS if m not in missing]
+        for r in rd:
             if not only or r["concept_name"] in only:
                 groups[r["concept_name"], r["class_name"]].append(r)
     for (c, k), recs in sorted(groups.items()):
         recs = recs[:]; random.Random(f"{c}/{k}").shuffle(recs)  # random tie order
         rows = []
-        for m in PLOT_METHODS:
+        for m in methods:
             ranked = sorted(recs, key=lambda r: -abs(float(r[m])))
             rows.append((DISPLAY[m], [str(image_path(r["image"])) for r in ranked[:N]],
                          [str(image_path(r["image"])) for r in ranked[-N:]]))
-        render(rows, d / "grids" / f"{c}_{k.replace(' ', '_')}.png")
-    print(f"wrote {len(groups)} grids to {d / 'grids'}")
+        render(rows, d / GRIDS / f"{c}_{k.replace(' ', '_')}.png")
+    print(f"wrote {len(groups)} grids ({', '.join(methods)}) to {d / GRIDS}")
 
 
 if __name__ == "__main__":

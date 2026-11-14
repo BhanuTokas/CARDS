@@ -52,9 +52,10 @@ def load(d):
             for r in read(f):
                 if key(r) in rec and r[col] != "":
                     rec[key(r)][col] = float(r[col])
-    for k, v in rec.items():
-        if k[0] == "absent":
-            v["eac"] = 0.0
+    if any(d.glob("eac_*.csv")):  # EAC not run (e.g. the full class pools of the paper figures): leave it out
+        for k, v in rec.items():
+            if k[0] == "absent":
+                v["eac"] = 0.0
     return rec
 
 
@@ -73,10 +74,13 @@ def srho(x, y):
 def main():
     d = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("COCO_LOCAL_OUT", "results/coco_stuff_local/resnet18"))
     rec = load(d)
+    global METHODS
+    METHODS = [m for m in METHODS if any(m in v for v in rec.values())]  # methods that were run
+    print(f"methods: {', '.join(METHODS)}")
     full = {k: v for k, v in rec.items() if all(m in v for m in METHODS)}
-    print(f"{len(rec)} records, {len(full)} with every method "
-          f"({sum(1 for k in rec if k[0] == 'present')} present, of which "
-          f"{sum(1 for k, v in rec.items() if k[0] == 'present' and 'eac' not in v)} have no EAC region)")
+    no_eac = sum(1 for k, v in rec.items() if k[0] == "present" and "eac" not in v)
+    print(f"{len(rec)} records, {len(full)} with every method ({sum(1 for k in rec if k[0] == 'present')} present"
+          + (f", of which {no_eac} have no EAC region)" if "eac" in METHODS else ")"))
     with open(d / "local_merged.csv", "w", newline="") as f:
         w = csv.writer(f); w.writerow(["set", "image", "concept_name", "class_name", "gt", *METHODS])
         for k, v in sorted(full.items()):
