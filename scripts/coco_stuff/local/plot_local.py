@@ -34,8 +34,11 @@ THUMB = os.environ.get("LOCAL_THUMB", "crop")  # crop | stretch (the paper's fig
 assert THUMB in ("crop", "stretch", "pad"), f"LOCAL_THUMB must be crop, stretch or pad, got {THUMB!r}"
 BG, PANEL_BG, LABEL, SUB, DIVIDER, BORDER = (250, 250, 250), (255, 255, 255), (30, 30, 30), (90, 90, 90), (0, 0, 0), (60, 60, 60)
 # env LOCAL_PRESENCE=1: border each thumbnail by the record's set -- green = concept detected in the image by the ground-
-# truth detector (Grounding DINO), red = not detected -- and add a one-line legend under the grid.
+# truth detector (Grounding DINO), red = not detected. The detector finds objects; it cannot localise colours, blur or
+# textures, so env LOCAL_PRESENCE_SKIP = comma-separated concepts drawn with the plain border instead (e.g.
+# "blackness,blueness,blurriness").
 PRESENCE = os.environ.get("LOCAL_PRESENCE", "0") == "1"
+PRESENCE_SKIP = {c.strip() for c in os.environ.get("LOCAL_PRESENCE_SKIP", "").split(",") if c.strip()}
 PRESENT_C, ABSENT_C = (26, 150, 65), (215, 25, 28)
 
 
@@ -58,8 +61,8 @@ def font(bold: bool, size: int):
 
 
 def thumb_at(grid, draw, item, x0, y0, thumb, border):
-    path, present = item
-    color = (PRESENT_C if present else ABSENT_C) if PRESENCE else BORDER
+    path, present = item  # present: True / False, or None = no presence border
+    color = BORDER if present is None else (PRESENT_C if present else ABSENT_C)
     draw.rectangle([x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1], outline=color, width=border)
     try:
         src = Image.open(path).convert("RGB")
@@ -75,15 +78,14 @@ def thumb_at(grid, draw, item, x0, y0, thumb, border):
 
 
 def render(rows, out_path: Path, thumb=150, n=N):
-    left, pad, border = 10, 3, (7 if PRESENCE else 4)
+    left, pad, border = 10, 3, 4
     line1_h, line2_h = 40, 32
     cell_h = thumb + 2 * border
     block_w = n * (thumb + 2 * border + pad)
     divider_w = 26
     row_h = line1_h + line2_h + cell_h + pad
     width = left + 2 * block_w + divider_w + left
-    legend_h = 44 if PRESENCE else 0
-    grid = Image.new("RGB", (width, len(rows) * row_h + pad + legend_h), BG)
+    grid = Image.new("RGB", (width, len(rows) * row_h + pad), BG)
     draw = ImageDraw.Draw(grid)
     row_font, sub_font = font(True, 30), font(False, 28)
     bottom_x0 = left + block_w + divider_w
@@ -100,12 +102,6 @@ def render(rows, out_path: Path, thumb=150, n=N):
         draw.text((bottom_x0, sub_y), f"Bottom {n}", fill=SUB, font=sub_font)
         for c, p in enumerate(bottom):
             thumb_at(grid, draw, p, bottom_x0 + c * (thumb + 2 * border + pad), cell_y0, thumb, border)
-    if PRESENCE:  # legend: coloured swatch + text, twice
-        y, x, f = len(rows) * row_h + pad + 8, left, font(False, 24)
-        for col, text in ((PRESENT_C, "concept detected"), (ABSENT_C, "concept not detected")):
-            draw.rectangle([x, y + 2, x + 26, y + 26], outline=col, width=5)
-            draw.text((x + 36, y), text, fill=SUB, font=f)
-            x += 36 + int(draw.textlength(text, font=f)) + 40
     out_path.parent.mkdir(parents=True, exist_ok=True)
     grid.save(out_path)
 
@@ -125,10 +121,11 @@ def main():
     for (c, k), recs in sorted(groups.items()):
         recs = recs[:]; random.Random(f"{c}/{k}").shuffle(recs)  # random tie order
         rows = []
+        show = PRESENCE and c not in PRESENCE_SKIP
         for m in methods:
             ranked = sorted(recs, key=lambda r: -abs(float(r[m])))
-            rows.append((DISPLAY[m], [(str(image_path(r["image"])), r["set"] == "present") for r in ranked[:N]],
-                         [(str(image_path(r["image"])), r["set"] == "present") for r in ranked[-N:]]))
+            rows.append((DISPLAY[m], [(str(image_path(r["image"])), r["set"] == "present" if show else None) for r in ranked[:N]],
+                         [(str(image_path(r["image"])), r["set"] == "present" if show else None) for r in ranked[-N:]]))
         render(rows, d / GRIDS / f"{c}_{k.replace(' ', '_')}.png")
     print(f"wrote {len(groups)} grids ({', '.join(methods)}) to {d / GRIDS}")
 
