@@ -8,7 +8,8 @@ absent records) are broken by a fixed random order, not file order, which would 
 argv[1] (optional, default $COCO_LOCAL_OUT) = folder with local_merged.csv (score_local.py); grids go to
 argv[1]/grids/{concept}_{class}.png. Optional argv[2:] = concept names to draw (default: all).
 env LOCAL_PLOT_METHODS = comma-separated rows to draw (default all four), e.g. "cards,tcav_sign,sae" to leave out EAC,
-whose regions are the ground truth's own concept masks; env LOCAL_GRIDS = output subfolder name (default grids)."""
+whose regions are the ground truth's own concept masks; env LOCAL_GRIDS = output subfolder name (default grids);
+env LOCAL_THUMB = crop (default) | stretch (as the paper's figures) | pad."""
 import csv
 import os
 import random
@@ -28,6 +29,8 @@ PLOT_METHODS = [m.strip() for m in os.environ.get("LOCAL_PLOT_METHODS", "cards,t
 assert PLOT_METHODS and set(PLOT_METHODS) <= set(DISPLAY), f"LOCAL_PLOT_METHODS must be from {sorted(DISPLAY)}"
 EXPLICIT = "LOCAL_PLOT_METHODS" in os.environ  # default list: drop methods that were not run (e.g. no EAC)
 GRIDS = os.environ.get("LOCAL_GRIDS", "grids")
+THUMB = os.environ.get("LOCAL_THUMB", "crop")  # crop | stretch (the paper's figures) | pad
+assert THUMB in ("crop", "stretch", "pad"), f"LOCAL_THUMB must be crop, stretch or pad, got {THUMB!r}"
 BG, PANEL_BG, LABEL, SUB, DIVIDER, BORDER = (250, 250, 250), (255, 255, 255), (30, 30, 30), (90, 90, 90), (0, 0, 0), (60, 60, 60)
 
 
@@ -52,7 +55,13 @@ def font(bold: bool, size: int):
 def thumb_at(grid, draw, path, x0, y0, thumb, border):
     draw.rectangle([x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1], outline=BORDER, width=border)
     try:
-        im = ImageOps.fit(Image.open(path).convert("RGB"), (thumb, thumb), Image.Resampling.BICUBIC)
+        src = Image.open(path).convert("RGB")
+        if THUMB == "stretch":  # as the paper's figures (by_concept_across_classes script): whole image, aspect distorted
+            im = src.resize((thumb, thumb), Image.Resampling.BICUBIC)
+        elif THUMB == "pad":    # whole image, aspect kept, panel-coloured bars
+            im = ImageOps.pad(src, (thumb, thumb), Image.Resampling.BICUBIC, color=PANEL_BG)
+        else:                   # crop: centre square, aspect kept, edges cut
+            im = ImageOps.fit(src, (thumb, thumb), Image.Resampling.BICUBIC)
     except OSError:
         im = Image.new("RGB", (thumb, thumb), "gray")
     grid.paste(im, (x0 + border, y0 + border))
