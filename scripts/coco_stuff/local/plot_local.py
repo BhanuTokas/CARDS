@@ -10,7 +10,8 @@ argv[1]/grids/{concept}_{class}.png. Optional argv[2:] = concept names to draw (
 env LOCAL_PLOT_METHODS = comma-separated rows to draw (default all four), e.g. "cards,tcav_sign,sae" to leave out EAC,
 whose regions are the ground truth's own concept masks; env LOCAL_GRIDS = output subfolder name (default grids);
 env LOCAL_THUMB = crop (default) | stretch (as the paper's figures) | pad; env LOCAL_PRESENCE=1 = green / red borders for
-records where the ground-truth detector found / did not find the concept."""
+records where the ground-truth detector found / did not find the concept; LOCAL_PRESENCE=wrong = a thick red border only
+on top images without a detection and bottom images with one."""
 import csv
 import os
 import random
@@ -37,7 +38,12 @@ BG, PANEL_BG, LABEL, SUB, DIVIDER, BORDER = (250, 250, 250), (255, 255, 255), (3
 # truth detector (Grounding DINO), red = not detected. The detector finds objects; it cannot localise colours, blur or
 # textures, so env LOCAL_PRESENCE_SKIP = comma-separated concepts drawn with the plain border instead (e.g.
 # "blackness,blueness,blurriness").
-PRESENCE = os.environ.get("LOCAL_PRESENCE", "0") == "1"
+# LOCAL_PRESENCE=wrong: only the records that contradict the detector get a thick red border (a top-N image where the
+# concept was not detected, a bottom-N image where it was); every other image keeps the plain border.
+PRESENCE_MODE = os.environ.get("LOCAL_PRESENCE", "0")
+assert PRESENCE_MODE in ("0", "1", "wrong"), f"LOCAL_PRESENCE must be 0, 1 or wrong, got {PRESENCE_MODE!r}"
+PRESENCE = PRESENCE_MODE != "0"
+WRONG_W = 9  # border width of a highlighted wrong record (drawn over the image edge, the layout is unchanged)
 PRESENCE_SKIP = {c.strip() for c in os.environ.get("LOCAL_PRESENCE_SKIP", "").split(",") if c.strip()}
 PRESENT_C, ABSENT_C = (26, 150, 65), (215, 25, 28)
 
@@ -61,9 +67,10 @@ def font(bold: bool, size: int):
 
 
 def thumb_at(grid, draw, item, x0, y0, thumb, border):
-    path, present = item  # present: True / False, or None = no presence border
-    color = BORDER if present is None else (PRESENT_C if present else ABSENT_C)
-    draw.rectangle([x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1], outline=color, width=border)
+    path, present = item  # present: True / False, None = plain border, "wrong" = thick red (LOCAL_PRESENCE=wrong)
+    color = BORDER if present in (None, "wrong") else (PRESENT_C if present else ABSENT_C)
+    box = [x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1]
+    draw.rectangle(box, outline=color, width=border)
     try:
         src = Image.open(path).convert("RGB")
         if THUMB == "stretch":  # as the paper's figures (by_concept_across_classes script): whole image, aspect distorted
@@ -75,6 +82,8 @@ def thumb_at(grid, draw, item, x0, y0, thumb, border):
     except OSError:
         im = Image.new("RGB", (thumb, thumb), "gray")
     grid.paste(im, (x0 + border, y0 + border))
+    if present == "wrong":
+        draw.rectangle(box, outline=ABSENT_C, width=WRONG_W)
 
 
 def render(rows, out_path: Path, thumb=150, n=N):
@@ -122,10 +131,19 @@ def main():
         recs = recs[:]; random.Random(f"{c}/{k}").shuffle(recs)  # random tie order
         rows = []
         show = PRESENCE and c not in PRESENCE_SKIP
+
+        def mark(r, top, show=show):
+            if not show:
+                return None
+            present = r["set"] == "present"
+            if PRESENCE_MODE == "wrong":
+                return "wrong" if present != top else None
+            return present
+
         for m in methods:
             ranked = sorted(recs, key=lambda r: -abs(float(r[m])))
-            rows.append((DISPLAY[m], [(str(image_path(r["image"])), r["set"] == "present" if show else None) for r in ranked[:N]],
-                         [(str(image_path(r["image"])), r["set"] == "present" if show else None) for r in ranked[-N:]]))
+            rows.append((DISPLAY[m], [(str(image_path(r["image"])), mark(r, True)) for r in ranked[:N]],
+                         [(str(image_path(r["image"])), mark(r, False)) for r in ranked[-N:]]))
         render(rows, d / GRIDS / f"{c}_{k.replace(' ', '_')}.png")
     print(f"wrote {len(groups)} grids ({', '.join(methods)}) to {d / GRIDS}")
 
