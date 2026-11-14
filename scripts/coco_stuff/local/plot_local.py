@@ -9,7 +9,8 @@ argv[1] (optional, default $COCO_LOCAL_OUT) = folder with local_merged.csv (scor
 argv[1]/grids/{concept}_{class}.png. Optional argv[2:] = concept names to draw (default: all).
 env LOCAL_PLOT_METHODS = comma-separated rows to draw (default all four), e.g. "cards,tcav_sign,sae" to leave out EAC,
 whose regions are the ground truth's own concept masks; env LOCAL_GRIDS = output subfolder name (default grids);
-env LOCAL_THUMB = crop (default) | stretch (as the paper's figures) | pad."""
+env LOCAL_THUMB = crop (default) | stretch (as the paper's figures) | pad; env LOCAL_PRESENCE=1 = green / red borders for
+records where the ground-truth detector found / did not find the concept."""
 import csv
 import os
 import random
@@ -32,6 +33,10 @@ GRIDS = os.environ.get("LOCAL_GRIDS", "grids")
 THUMB = os.environ.get("LOCAL_THUMB", "crop")  # crop | stretch (the paper's figures) | pad
 assert THUMB in ("crop", "stretch", "pad"), f"LOCAL_THUMB must be crop, stretch or pad, got {THUMB!r}"
 BG, PANEL_BG, LABEL, SUB, DIVIDER, BORDER = (250, 250, 250), (255, 255, 255), (30, 30, 30), (90, 90, 90), (0, 0, 0), (60, 60, 60)
+# env LOCAL_PRESENCE=1: border each thumbnail by the record's set -- green = concept detected in the image by the ground-
+# truth detector (Grounding DINO), red = not detected -- and add a one-line legend under the grid.
+PRESENCE = os.environ.get("LOCAL_PRESENCE", "0") == "1"
+PRESENT_C, ABSENT_C = (26, 150, 65), (215, 25, 28)
 
 
 def font(bold: bool, size: int):
@@ -52,8 +57,10 @@ def font(bold: bool, size: int):
     return ImageFont.load_default()
 
 
-def thumb_at(grid, draw, path, x0, y0, thumb, border):
-    draw.rectangle([x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1], outline=BORDER, width=border)
+def thumb_at(grid, draw, item, x0, y0, thumb, border):
+    path, present = item
+    color = (PRESENT_C if present else ABSENT_C) if PRESENCE else BORDER
+    draw.rectangle([x0, y0, x0 + thumb + 2 * border - 1, y0 + thumb + 2 * border - 1], outline=color, width=border)
     try:
         src = Image.open(path).convert("RGB")
         if THUMB == "stretch":  # as the paper's figures (by_concept_across_classes script): whole image, aspect distorted
@@ -68,14 +75,15 @@ def thumb_at(grid, draw, path, x0, y0, thumb, border):
 
 
 def render(rows, out_path: Path, thumb=150, n=N):
-    left, pad, border = 10, 3, 4
+    left, pad, border = 10, 3, (7 if PRESENCE else 4)
     line1_h, line2_h = 40, 32
     cell_h = thumb + 2 * border
     block_w = n * (thumb + 2 * border + pad)
     divider_w = 26
     row_h = line1_h + line2_h + cell_h + pad
     width = left + 2 * block_w + divider_w + left
-    grid = Image.new("RGB", (width, len(rows) * row_h + pad), BG)
+    legend_h = 44 if PRESENCE else 0
+    grid = Image.new("RGB", (width, len(rows) * row_h + pad + legend_h), BG)
     draw = ImageDraw.Draw(grid)
     row_font, sub_font = font(True, 30), font(False, 28)
     bottom_x0 = left + block_w + divider_w
@@ -92,6 +100,12 @@ def render(rows, out_path: Path, thumb=150, n=N):
         draw.text((bottom_x0, sub_y), f"Bottom {n}", fill=SUB, font=sub_font)
         for c, p in enumerate(bottom):
             thumb_at(grid, draw, p, bottom_x0 + c * (thumb + 2 * border + pad), cell_y0, thumb, border)
+    if PRESENCE:  # legend: coloured swatch + text, twice
+        y, x, f = len(rows) * row_h + pad + 8, left, font(False, 24)
+        for col, text in ((PRESENT_C, "concept detected"), (ABSENT_C, "concept not detected")):
+            draw.rectangle([x, y + 2, x + 26, y + 26], outline=col, width=5)
+            draw.text((x + 36, y), text, fill=SUB, font=f)
+            x += 36 + int(draw.textlength(text, font=f)) + 40
     out_path.parent.mkdir(parents=True, exist_ok=True)
     grid.save(out_path)
 
@@ -113,8 +127,8 @@ def main():
         rows = []
         for m in methods:
             ranked = sorted(recs, key=lambda r: -abs(float(r[m])))
-            rows.append((DISPLAY[m], [str(image_path(r["image"])) for r in ranked[:N]],
-                         [str(image_path(r["image"])) for r in ranked[-N:]]))
+            rows.append((DISPLAY[m], [(str(image_path(r["image"])), r["set"] == "present") for r in ranked[:N]],
+                         [(str(image_path(r["image"])), r["set"] == "present") for r in ranked[-N:]]))
         render(rows, d / GRIDS / f"{c}_{k.replace(' ', '_')}.png")
     print(f"wrote {len(groups)} grids ({', '.join(methods)}) to {d / GRIDS}")
 
