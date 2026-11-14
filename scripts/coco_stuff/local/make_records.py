@@ -36,6 +36,20 @@ CASES = [("greenness", "sports ball"), ("blueness", "sports ball"), ("bottle", "
 PAIRS = [tuple(p.split(":")) for p in os.environ.get("LOCAL_PAIRS", "").split(";") if p.strip()]
 for _k, _c in PAIRS:
     assert _k in CLASSES, f"unknown class {_k!r} in LOCAL_PAIRS"
+# env LOCAL_PAPER_SAMPLE=n: instead of N_PER_SET present + N_PER_SET absent, each pair's records are the n class-present
+# images the paper's COCO local figures ranked (plot_coco_stuff_local_attribution_by_concept_across_classes.py: the class's
+# multi-label train2017 images sorted by path, then rng(42 + 3,000,000 + class index).choice(n) when there are more).
+# Records are written in that sample's order; local_cards.py then seeds the noise fills as that script did.
+PAPER_SAMPLE = int(os.environ.get("LOCAL_PAPER_SAMPLE", "0"))
+assert not PAPER_SAMPLE or PAIRS, "LOCAL_PAPER_SAMPLE needs LOCAL_PAIRS"
+
+
+def paper_sample(k: str, cls_of: dict[str, set[str]]) -> list[str]:
+    ims = sorted(im for im, ks in cls_of.items() if k in ks)
+    if len(ims) <= PAPER_SAMPLE:
+        return ims
+    idx = np.random.default_rng(42 + 3_000_000 + CLASSES.index(k)).choice(len(ims), size=PAPER_SAMPLE, replace=False)
+    return [ims[i] for i in sorted(idx)]
 
 
 def class_images() -> dict[str, set[str]]:
@@ -103,6 +117,12 @@ def main():
             for i, (c, k) in enumerate(pairs):
                 rng = np.random.default_rng(SEED + i)
                 pres = sorted(gt[c, k]); absent = sorted(im for im, ks in cls_of.items() if k in ks and im not in detected[c])
+                if PAPER_SAMPLE:  # the paper figures' image sample, in its order (present / absent by detection)
+                    for im in paper_sample(k, cls_of):
+                        wr.writerow(["present", im, c, k, *gt[c, k][im]] if im in gt[c, k] else ["absent", im, c, k, 0.0, 0.0])
+                    w.writerow([c, k, len(pres), f"{stats[c, k][1]:.5f}", len(absent), "+".join(chosen[c, k])])
+                    print(f"  {c:22s} x {k:15s} paper sample of {PAPER_SAMPLE}", flush=True)
+                    continue
                 for im in sorted(rng.choice(pres, min(N_PER_SET, len(pres)), replace=False)):
                     wr.writerow(["present", im, c, k, *gt[c, k][im]])
                 for im in sorted(rng.choice(absent, min(N_PER_SET, len(absent)), replace=False)):

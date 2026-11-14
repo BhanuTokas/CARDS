@@ -13,6 +13,7 @@ argv[1] = cutoffs: compute the cutoffs of the record concepts once -> $COCO_LOCA
 argv[1] = score:   sharded over (image, concept) groups -> cards_{SHARD}.csv."""
 import csv
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -43,6 +44,9 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 K, ALPHA = 50, 1.5
 FILLS = ["blur", "zero_fill", "mean_fill", "hue_shift", "white_fill", "zero_fill_noise", "noise_then_blur"]
 CUTOFFS = C.OUT / "cards_cutoffs.json"
+# make_records.py's LOCAL_PAPER_SAMPLE: seed the noise fills as the paper figures' script did, 42 + concept index * 10,000
+# + the image's position in its pair's sample (default: its (image, concept) group's position in the records)
+PAPER_SAMPLE = int(os.environ.get("LOCAL_PAPER_SAMPLE", "0"))
 
 
 def setup():
@@ -82,7 +86,14 @@ def score():
     q = {c: v.to(DEVICE) for c, v in q.items()}
     spec = BACKBONES["coco_stuff"]; model = spec.load_native().to(DEVICE).eval(); pre = spec.preprocess
     cls_idx = {k: i for i, k in enumerate(COCO_STUFF_20_CLASSES)}
-    todo = C.shard(C.groups(C.records()))
+    if PAPER_SAMPLE:  # one item per record, seeded by its position in its pair's sample (make_records LOCAL_PAPER_SAMPLE)
+        seen: dict[tuple[str, str], int] = {}; items = []
+        for r in C.records():
+            p = r["concept_name"], r["class_name"]; items.append((seen.setdefault(p, 0), (r["image"], p[0]), [r]))
+            seen[p] += 1
+        todo = [(gi, (key, recs)) for _, (gi, key, recs) in C.shard(items)]
+    else:
+        todo = C.shard(C.groups(C.records()))
     print(f"{len(todo)} (image, concept) groups in this shard", flush=True)
     fh = open(C.OUT / f"cards_{C.shard_tag()}.csv", "w", newline=""); w = csv.writer(fh)
     w.writerow([*C.BASE_COLS, "cards", "fill", "mask_frac"])
