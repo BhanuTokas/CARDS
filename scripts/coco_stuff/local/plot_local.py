@@ -33,6 +33,17 @@ PLOT_METHODS = [m.strip() for m in os.environ.get("LOCAL_PLOT_METHODS", "cards,t
 assert PLOT_METHODS and set(PLOT_METHODS) <= set(DISPLAY), f"LOCAL_PLOT_METHODS must be from {sorted(DISPLAY)}"
 EXPLICIT = "LOCAL_PLOT_METHODS" in os.environ  # default list: drop methods that were not run (e.g. no EAC)
 GRIDS = os.environ.get("LOCAL_GRIDS", "grids")
+# env LOCAL_IMAGE_DIR: read the images from this folder instead of COCO train2017, e.g. CelebA-HQ-img for the CelebA
+# local results (scripts/celeba/baselines/score_local.py), whose task column is target_task instead of class_name.
+IMAGE_DIR = os.environ.get("LOCAL_IMAGE_DIR")
+
+
+def img(name: str) -> str:
+    return str(Path(IMAGE_DIR) / name) if IMAGE_DIR else str(image_path(name))
+
+
+def cls_of(r: dict) -> str:
+    return r.get("class_name") or r["target_task"]
 THUMB = os.environ.get("LOCAL_THUMB", "crop")  # crop | stretch (the paper's figures) | pad
 assert THUMB in ("crop", "stretch", "pad"), f"LOCAL_THUMB must be crop, stretch or pad, got {THUMB!r}"
 BG, PANEL_BG, LABEL, SUB, DIVIDER, BORDER = (250, 250, 250), (255, 255, 255), (30, 30, 30), (90, 90, 90), (0, 0, 0), (60, 60, 60)
@@ -135,7 +146,7 @@ def main():
         methods = [m for m in PLOT_METHODS if m not in missing]
         for r in rd:
             if not only or r["concept_name"] in only:
-                groups[r["concept_name"], r["class_name"]].append(r)
+                groups[r["concept_name"], cls_of(r)].append(r)
     for (c, k), recs in sorted(groups.items()):
         recs = recs[:]; random.Random(f"{c}/{k}").shuffle(recs)  # random tie order
         rows = []
@@ -153,8 +164,8 @@ def main():
 
         for m in methods:
             ranked = sorted(recs, key=lambda r: -abs(float(r[m])))
-            rows.append((DISPLAY[m], [(str(image_path(r["image"])), mark(r, True)) for r in ranked[:N]],
-                         [(str(image_path(r["image"])), mark(r, False)) for r in ranked[-N:]]))
+            rows.append((DISPLAY[m], [(img(r["image"]), mark(r, True)) for r in ranked[:N]],
+                         [(img(r["image"]), mark(r, False)) for r in ranked[-N:]]))
         render(rows, d / GRIDS / f"{c}_{k.replace(' ', '_')}.png")
     print(f"wrote {len(groups)} grids ({', '.join(methods)}) to {d / GRIDS}")
 
