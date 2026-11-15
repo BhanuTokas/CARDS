@@ -34,7 +34,7 @@ NEW = [("ConceptSAE", "sae.csv", "score"), ("ConceptSHAP (signed)", "shap.csv", 
        ("ConceptSHAP (original)", "shap.csv", "shap_acc"), ("EAC", "eac.csv", "score")]
 # method -> (legend label, color, marker); the same as the CelebA figures (scripts/celeba/shortcut_baselines/plot_pooled.py)
 STYLE = {
-    "Masking hybrid": ("Hide and Seek", "#1f77b4", "o"),
+    "Masking hybrid": ("MOCA", "#1f77b4", "o"),
     "TCAV (magnitude)": ("TCAV (magnitude)", "#ff7f0e", "D"),
     "PCBM (conventional)": ("PCBM (conventional)", "#2ca02c", "^"),
     "PCBM (SigLIP)": ("PCBM (SigLIP)", "#bcbd22", "v"),
