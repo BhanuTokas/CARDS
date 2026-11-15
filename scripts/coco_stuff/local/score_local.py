@@ -28,7 +28,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 
 METHODS = ["cards", "tcav_sign", "tcav_dd", "tcav4_dd", "eac", "sae"]
 LABELS = {"cards": "MOCA", "tcav_sign": "TCAV layer3 (sign)", "tcav_dd": "TCAV layer3 (derivative)",
-          "tcav4_dd": "TCAV layer4 (derivative)", "eac": "EAC", "sae": "ConceptSAE"}
+          "tcav4_dd": "TCAV layer4 (derivative)", "eac": "EAC", "sae": "DN-SAE"}
 NS, N_BOOT, N_TIE = (3, 5, 10), 1000, 200
 
 

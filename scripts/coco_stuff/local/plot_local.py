@@ -26,7 +26,7 @@ from common import image_path
 
 N = 3
 DISPLAY = {"cards": "MOCA (Ours)", "tcav_sign": "TCAV", "tcav_dd": "TCAV", "tcav4_dd": "TCAV (layer4)",
-           "eac": "EAC", "sae": "ConceptSAE"}  # tcav_sign / tcav_dd = layer3 sign score / directional derivative
+           "eac": "EAC", "sae": "DN-SAE"}  # tcav_sign / tcav_dd = layer3 sign score / directional derivative
 # EAC is left out by default: its concept regions are the ground truth's own segments, so its local scores are circular
 # (removed from the paper's local experiment, 2026-11-14); add it back explicitly with LOCAL_PLOT_METHODS if needed.
 PLOT_METHODS = [m.strip() for m in os.environ.get("LOCAL_PLOT_METHODS", "cards,tcav_sign,sae").split(",") if m.strip()]
