@@ -52,7 +52,8 @@ PRESENCE_SKIP = {c.strip() for c in os.environ.get("LOCAL_PRESENCE_SKIP", "").sp
 LABELS = None
 if os.environ.get("LOCAL_LABELS"):
     with open(os.environ["LOCAL_LABELS"], newline="") as _f:
-        LABELS = {(r["concept_name"], r["class_name"], r["image"]): r["present"] == "1" for r in csv.DictReader(_f)}
+        LABELS = {(r["concept_name"], r["class_name"], r["image"]): r["present"] == "1"
+                  for r in csv.DictReader(_f) if r["present"] in ("0", "1")}  # empty = undecided: plain border
 PRESENT_C, ABSENT_C = (26, 150, 65), (215, 25, 28)
 
 
