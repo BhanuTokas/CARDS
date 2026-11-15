@@ -1,13 +1,13 @@
 # COCO-Stuff local (per-image) attribution: every method, ResNet18
 
 The COCO counterpart of the CelebA local experiment (`scripts/celeba/baselines/local_*.py`): per-image scores of
-Hide and Seek, TCAV, EAC and ConceptSAE on (concept, class) pairs with a per-image ground truth, then specificity /
+MOCA, TCAV, EAC and ConceptSAE on (concept, class) pairs with a per-image ground truth, then specificity /
 fidelity scores and top-3 / bottom-3 grids for every method.
 
 | Step | Script | Output in `$COCO_LOCAL_OUT` (default `results/coco_stuff_local/resnet18`) |
 |---|---|---|
 | Pairs and records | `make_records.py` | `pairs.csv`, `records.csv` |
-| Hide and Seek | `local_cards.py cutoffs`, then `local_cards.py score` (sharded) | `cards_cutoffs.json`, `cards_*.csv` |
+| MOCA | `local_cards.py cutoffs`, then `local_cards.py score` (sharded) | `cards_cutoffs.json`, `cards_*.csv` |
 | TCAV (layer3; layer4 for reference) | `local_tcav.py` | `tcav.csv`, `tcav_cavs.pt` |
 | EAC | `local_eac.py SAM_CKPT` (sharded, resumable) | `eac_*.csv` |
 | ConceptSAE | `local_sae.py` | `sae_resnet18.pt`, `sae_global.csv`, `sae.csv` |
@@ -23,7 +23,7 @@ fidelity scores and top-3 / bottom-3 grids for every method.
   - Up to 100 of each per pair.
 - **Pairs.** Fixed before scoring. Among pairs with at least 100 present images, each class contributes three: the largest
   mean ground truth, the smallest, and the most images. The three cases of the existing COCO local figures are added too.
-- **Hide and Seek.** Uses the COCO headline configuration: SigLIP, de-meaned and orthogonalized queries, z-score
+- **MOCA.** Uses the COCO headline configuration: SigLIP, de-meaned and orthogonalized queries, z-score
   α = 1.5 from the top-50 val2017 retrievals, and best-of-7 fill. The score is the class logit drop.
 - **TCAV.** Uses layer3 because the layer4 score is constant per (concept, class) for ResNet18, since only average
   pooling and the linear head follow layer4; `tcav4_dd` shows this. CAVs come from 40 Broden positives against 6

@@ -8,7 +8,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
-# COCO-Stuff local (per-image) attribution for the ResNet18 black box: Hide and Seek, TCAV, EAC, ConceptSAE on the
+# COCO-Stuff local (per-image) attribution for the ResNet18 black box: MOCA, TCAV, EAC, ConceptSAE on the
 # records of make_records.py, then scores and top-3/bottom-3 grids. One METHOD per submission; array tasks are shards.
 # Submit from the repo root (uv sync --locked on the login node first), each step after the previous one:
 #   mkdir -p logs

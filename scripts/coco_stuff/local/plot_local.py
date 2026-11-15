@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import image_path
 
 N = 3
-DISPLAY = {"cards": "Hide and Seek (Ours)", "tcav_sign": "TCAV", "tcav_dd": "TCAV", "tcav4_dd": "TCAV (layer4)",
+DISPLAY = {"cards": "MOCA (Ours)", "tcav_sign": "TCAV", "tcav_dd": "TCAV", "tcav4_dd": "TCAV (layer4)",
            "eac": "EAC", "sae": "ConceptSAE"}  # tcav_sign / tcav_dd = layer3 sign score / directional derivative
 PLOT_METHODS = [m.strip() for m in os.environ.get("LOCAL_PLOT_METHODS", "cards,tcav_sign,eac,sae").split(",") if m.strip()]
 assert PLOT_METHODS and set(PLOT_METHODS) <= set(DISPLAY), f"LOCAL_PLOT_METHODS must be from {sorted(DISPLAY)}"

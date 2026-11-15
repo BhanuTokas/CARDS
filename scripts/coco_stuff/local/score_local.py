@@ -27,7 +27,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 METHODS = ["cards", "tcav_sign", "tcav_dd", "tcav4_dd", "eac", "sae"]
-LABELS = {"cards": "Hide and Seek (CARDS)", "tcav_sign": "TCAV layer3 (sign)", "tcav_dd": "TCAV layer3 (derivative)",
+LABELS = {"cards": "MOCA", "tcav_sign": "TCAV layer3 (sign)", "tcav_dd": "TCAV layer3 (derivative)",
           "tcav4_dd": "TCAV layer4 (derivative)", "eac": "EAC", "sae": "ConceptSAE"}
 NS, N_BOOT, N_TIE = (3, 5, 10), 1000, 200
 

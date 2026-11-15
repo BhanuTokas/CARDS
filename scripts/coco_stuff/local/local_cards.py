@@ -1,5 +1,5 @@
 # ruff: noqa: SIM115
-"""Local (per-image) Hide and Seek (CARDS masking hybrid) on the COCO-Stuff local records (common.py), ResNet18.
+"""Local (per-image) MOCA (CARDS masking hybrid) on the COCO-Stuff local records (common.py), ResNet18.
 
 Same configuration as the COCO headline runs (run_cards_coco_stuff_model_variants.py, ablate_patch_count.py): SigLIP
 ViT-B-16 (webli), concept queries de-meaned with the generic text center and Loewdin-orthogonalized over every
