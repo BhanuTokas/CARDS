@@ -45,6 +45,12 @@ assert PRESENCE_MODE in ("0", "1", "wrong"), f"LOCAL_PRESENCE must be 0, 1 or wr
 PRESENCE = PRESENCE_MODE != "0"
 WRONG_W = 9  # border width of a highlighted wrong record (drawn over the image edge, the layout is unchanged)
 PRESENCE_SKIP = {c.strip() for c in os.environ.get("LOCAL_PRESENCE_SKIP", "").split(",") if c.strip()}
+# env LOCAL_LABELS = CSV (concept_name, class_name, image, present) of manual labels (e.g. visual inspection) used
+# instead of the detector for the presence borders; images without a label get the plain border.
+LABELS = None
+if os.environ.get("LOCAL_LABELS"):
+    with open(os.environ["LOCAL_LABELS"], newline="") as _f:
+        LABELS = {(r["concept_name"], r["class_name"], r["image"]): r["present"] == "1" for r in csv.DictReader(_f)}
 PRESENT_C, ABSENT_C = (26, 150, 65), (215, 25, 28)
 
 
@@ -132,10 +138,12 @@ def main():
         rows = []
         show = PRESENCE and c not in PRESENCE_SKIP
 
-        def mark(r, top, show=show):
+        def mark(r, top, show=show, c=c, k=k):
             if not show:
                 return None
-            present = r["set"] == "present"
+            present = r["set"] == "present" if LABELS is None else LABELS.get((c, k, r["image"]))
+            if present is None:  # not labelled
+                return None
             if PRESENCE_MODE == "wrong":
                 return "wrong" if present != top else None
             return present
