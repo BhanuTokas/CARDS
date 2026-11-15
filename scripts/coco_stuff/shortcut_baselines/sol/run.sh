@@ -19,7 +19,8 @@
 #   sbatch --dependency=afterok:$E0 --array=1-10 --time=24:00:00 --export=ALL,METHODS=eac scripts/coco_stuff/shortcut_baselines/sol/run.sh
 #   smoke: sbatch --array=0 --time=01:00:00 --export=ALL,METHODS=eac,EAC_LIMIT=3,SHORTCUT_OUT=/scratch/$USER/coco_sc_smoke scripts/coco_stuff/shortcut_baselines/sol/run.sh
 # EAC is resumable (per-image rows in eac.csv.images.csv): a task that hits its time limit continues when resubmitted.
-# Then: uv run --locked --extra pcbm-training python scripts/coco_stuff/shortcut_baselines/summarize.py (CPU)
+# Then: uv run --locked --extra pcbm-training --extra tcav python scripts/coco_stuff/shortcut_baselines/summarize.py
+#   (CPU; the tcav extra brings matplotlib through captum)
 # Needs: resnet18_coco_stuff_shortcut_{0..100}.pt in $COCO_SHORTCUT_CKPT_DIR [trained_models_new/coco_stuff/shortcut];
 # COCO_ROOT, BRODEN_ROOT [coco_common.py defaults]; CARDS_RESULTS_DIR [results/coco_stuff] with
 # coco_stuff_faithfulness.csv + _detection_counts.csv; GT_MASKS_DIR [$CARDS_RESULTS_DIR/gt_masks] for EAC;
