@@ -123,7 +123,7 @@ def _save_with_retry(grid: Image.Image, out_path: Path, attempts: int = 5) -> No
 
 _PRESENT = (0, 150, 60)
 _ABSENT = (200, 30, 30)
-_DIVIDER = (0, 0, 0)
+_DIVIDER = (120, 120, 120)
 _NEUTRAL_BORDER = (60, 60, 60)
 
 
@@ -147,22 +147,21 @@ def build_presence_grid_clean(
     """
     n_rows = len(rows)
     left_margin, pad, border = 10, 3, 4
-    right_margin = left_margin  # symmetric outer margins -- see div_x note below
-    line1_h, line2_h = 40, 32
+    line1_h, line2_h = 32, 26
     row_h_label = line1_h + line2_h
     cell_h = thumb + 2 * border
     block_w = n_per_block * (thumb + 2 * border + pad)
-    divider_w = 26
+    divider_w = 18
     row_block_h = row_h_label + cell_h + pad
 
-    width = left_margin + 2 * block_w + divider_w + right_margin
+    width = left_margin + 2 * block_w + divider_w + pad
     height = n_rows * row_block_h + pad
 
     grid = Image.new("RGB", (width, height), _BG)
     draw = ImageDraw.Draw(grid)
 
-    row_font = _font(_FONT_BOLD, 30)
-    sub_font = _font(_FONT_REGULAR, 28)
+    row_font = _font(_FONT_BOLD, 24)
+    sub_font = _font(_FONT_REGULAR, 19)
 
     bottom_x0_base = left_margin + block_w + divider_w
 
@@ -174,21 +173,15 @@ def build_presence_grid_clean(
         sub_y = y0 + line1_h + 2
         cell_y0 = y0 + row_h_label
 
-        draw.text((left_margin, sub_y), "Top 3", fill=(90, 90, 90), font=sub_font)
+        draw.text((left_margin, sub_y), "Top-3", fill=(90, 90, 90), font=sub_font)
         for c, (img_path, _is_present) in enumerate(top_n):
             x0 = left_margin + c * (thumb + 2 * border + pad)
             _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _NEUTRAL_BORDER)
 
-        # Centered in the gap between the two image blocks, minus a small
-        # correction: PIL's thick (width=6) line isn't drawn symmetrically
-        # around the given x -- it visually reads a couple px right of the
-        # coordinate -- so nudge left to compensate (prompted directly:
-        # "Shift it a couple pixels to the left, the line width might not
-        # be accounted for here").
-        div_x = left_margin + block_w + divider_w // 2 - 2
-        draw.line([(div_x, y0), (div_x, y0 + row_block_h - pad)], fill=_DIVIDER, width=6)
+        div_x = left_margin + block_w + divider_w // 2
+        draw.line([(div_x, y0), (div_x, y0 + row_block_h - pad)], fill=_DIVIDER, width=2)
 
-        draw.text((bottom_x0_base, sub_y), "Bottom 3", fill=(90, 90, 90), font=sub_font)
+        draw.text((bottom_x0_base, sub_y), "Bottom-3", fill=(90, 90, 90), font=sub_font)
         for c, (img_path, _is_present) in enumerate(bottom_n):
             x0 = bottom_x0_base + c * (thumb + 2 * border + pad)
             _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _NEUTRAL_BORDER)

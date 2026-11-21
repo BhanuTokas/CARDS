@@ -49,21 +49,10 @@ reads out ONE class (`cls_i`) afterward -- 19/20 of that work was pure waste.
 Confirmed directly (both call sites -- VIZ_CASES' per-(concept,class) loop and
 the dominant-class loop -- always pass a single fixed `cls_i`, never sweep
 multiple classes per call), so `_tcav_per_batch` now takes `cls_i` directly
-and backprops ONLY that class's logit sum, returning a 1D array instead
+and backprops ONLY that class's logit sum, returning a 1D sign array instead
 of the old [N, 20] array. This matters far more for the dominant-class section
 (103 concepts x every dominant-class image) than it did for VIZ_CASES (3
 concepts), which is why it's being made now rather than left as-is.
-
-**Ranking bug fixed: `_tcav_per_batch` no longer `torch.sign(...)`'s its
-output.** The sign-only version made every image's `np.abs(score)` tie at
-1.0 almost everywhere, so the top-3/bottom-3 sort silently degenerated
-into stable-sort tie-breaking on each image's fixed position in
-`cls_paths`/`test_paths` -- the SAME order for every concept within a
-class -- which is why every concept's TCAV grid showed the identical
-top-3/bottom-3 images. Prompted directly ("For the local attribution
-plot, it keeps sending the same top-3 bottom-3 for TCAV across all
-concepts." -> "I meant for the coco-stuff"). Now returns the raw signed
-grad-dot-CAV value, so `np.abs(...)` ranks on real per-image magnitude.
 
 **Renderer swapped to match the CelebA local-attribution grids exactly**
 (`scripts/celeba/analysis/local_attribution_plot_utils.build_presence_grid_
@@ -124,7 +113,7 @@ COCO_ROOT   = Path("/scratch/rnair21/LLMConceptEditing_old/coco")
 BRODEN_ROOT = Path("/scratch/rnair21/LLMConceptEditing_old/broden_concepts")
 CKPT_PATH   = Path("trained_models_new/coco_stuff/resnet18_coco_stuff.pt")
 RESULTS_DIR = Path("results/coco_stuff")
-FINAL_DIR = Path("/data/hkerner/btokas/CARDS/results/coco_stuff/")
+FINAL_DIR = Path("/data/hkerner/btokas/CARDS/resulrs/coco_stuff/")
 COUNTS_CSV  = RESULTS_DIR / "coco_stuff_faithfulness_detection_counts.csv"
 VIZ_OUT_DIR = FINAL_DIR / "local_attribution_viz"
 
@@ -184,7 +173,7 @@ _GRID_FONT_BOLD = _GRID_FONT_DIR / "DejaVuSans-Bold.ttf"
 _GRID_BG = (250, 250, 250)
 _GRID_PANEL_BG = (255, 255, 255)
 _GRID_LABEL_COLOR = (30, 30, 30)
-_GRID_DIVIDER = (0, 0, 0)
+_GRID_DIVIDER = (120, 120, 120)
 _GRID_NEUTRAL_BORDER = (60, 60, 60)
 
 
@@ -221,22 +210,21 @@ def build_presence_grid_clean(
     border color); no numeric score shown."""
     n_rows = len(rows)
     left_margin, pad, border = 10, 3, 4
-    right_margin = left_margin  # symmetric outer margins -- see div_x note below
-    line1_h, line2_h = 40, 32
+    line1_h, line2_h = 32, 26
     row_h_label = line1_h + line2_h
     cell_h = thumb + 2 * border
     block_w = n_per_block * (thumb + 2 * border + pad)
-    divider_w = 26
+    divider_w = 18
     row_block_h = row_h_label + cell_h + pad
 
-    width = left_margin + 2 * block_w + divider_w + right_margin
+    width = left_margin + 2 * block_w + divider_w + pad
     height = n_rows * row_block_h + pad
 
     grid = Image.new("RGB", (width, height), _GRID_BG)
     draw = ImageDraw.Draw(grid)
 
-    row_font = _grid_font(_GRID_FONT_BOLD, 30)
-    sub_font = _grid_font(_GRID_FONT_REGULAR, 28)
+    row_font = _grid_font(_GRID_FONT_BOLD, 24)
+    sub_font = _grid_font(_GRID_FONT_REGULAR, 19)
 
     bottom_x0_base = left_margin + block_w + divider_w
 
@@ -248,18 +236,15 @@ def build_presence_grid_clean(
         sub_y = y0 + line1_h + 2
         cell_y0 = y0 + row_h_label
 
-        draw.text((left_margin, sub_y), "Top 3", fill=(90, 90, 90), font=sub_font)
+        draw.text((left_margin, sub_y), "Top-3", fill=(90, 90, 90), font=sub_font)
         for c, (img_path, _is_present) in enumerate(top_n):
             x0 = left_margin + c * (thumb + 2 * border + pad)
             _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _GRID_NEUTRAL_BORDER)
 
-        # Centered in the gap between the two image blocks, minus a small
-        # correction for the thick (width=6) line not drawing symmetrically
-        # around the given x.
-        div_x = left_margin + block_w + divider_w // 2 - 2
-        draw.line([(div_x, y0), (div_x, y0 + row_block_h - pad)], fill=_GRID_DIVIDER, width=6)
+        div_x = left_margin + block_w + divider_w // 2
+        draw.line([(div_x, y0), (div_x, y0 + row_block_h - pad)], fill=_GRID_DIVIDER, width=2)
 
-        draw.text((bottom_x0_base, sub_y), "Bottom 3", fill=(90, 90, 90), font=sub_font)
+        draw.text((bottom_x0_base, sub_y), "Bottom-3", fill=(90, 90, 90), font=sub_font)
         for c, (img_path, _is_present) in enumerate(bottom_n):
             x0 = bottom_x0_base + c * (thumb + 2 * border + pad)
             _paste_bordered_thumb(grid, draw, img_path, x0, cell_y0, thumb, border, _GRID_NEUTRAL_BORDER)
@@ -376,26 +361,11 @@ def _tcav_per_batch(
     device: str,
     cls_i: int,
 ) -> np.ndarray:
-    """Returns the raw (signed, continuous) grad-dot-CAV array [N] for ONE
-    target class -- only backprops through that class's logit (see module
-    docstring's own "Single-class TCAV optimization" note for why: every
-    caller only ever wants one class per call, so the original
-    all-20-classes sweep wasted 19/20 of its backward passes).
-
-    **Deliberately NOT `torch.sign(...)`'d** -- this used to return only
-    the sign in {-1, 0, +1} (classic aggregate-TCAV-score convention, where
-    you only need the fraction of positive signs across many images), but
-    every caller here uses `np.abs(...)` on this output to rank individual
-    images for the top-3/bottom-3 grids. `np.abs(sign)` collapses almost
-    every image to the same tied value (1.0), so the "ranking" degenerated
-    into stable-sort tie-breaking on each image's position in `cls_paths`/
-    `test_paths` -- a fixed, concept-independent order for a given class --
-    which is exactly why every concept was showing the SAME top-3/bottom-3
-    TCAV images for that class. Confirmed directly ("For the local
-    attribution plot, it keeps sending the same top-3 bottom-3 for TCAV
-    across all concepts." -> "I meant for the coco-stuff"). Returning the
-    continuous dot product gives `np.abs(...)` real per-image, per-concept
-    variation to rank by."""
+    """Returns sign array [N] in {-1, 0, +1} for ONE target class -- only
+    backprops through that class's logit (see module docstring's own
+    "Single-class TCAV optimization" note for why: every caller only ever
+    wants one class per call, so the original all-20-classes sweep wasted
+    19/20 of its backward passes)."""
     cav_t = torch.tensor(cav_weights, dtype=torch.float32).to(device)
     h_store: list[torch.Tensor] = []
 
@@ -414,7 +384,7 @@ def _tcav_per_batch(
     if h_l.grad is None:
         return np.zeros(test_tensors.shape[0], dtype=np.float32)
     grad_flat = h_l.grad.mean(dim=[2, 3])
-    return (grad_flat @ cav_t).cpu().numpy()
+    return torch.sign(grad_flat @ cav_t).cpu().numpy()
 
 
 def _tcav_all_images(
