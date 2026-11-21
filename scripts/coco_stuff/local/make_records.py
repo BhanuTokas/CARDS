@@ -41,7 +41,18 @@ for _k, _c in PAIRS:
 # multi-label train2017 images sorted by path, then rng(42 + 3,000,000 + class index).choice(n) when there are more).
 # Records are written in that sample's order; local_cards.py then seeds the noise fills as that script did.
 PAPER_SAMPLE = int(os.environ.get("LOCAL_PAPER_SAMPLE", "0"))
-assert not PAPER_SAMPLE or PAIRS, "LOCAL_PAPER_SAMPLE needs LOCAL_PAIRS"
+# env LOCAL_SUPP=n (with LOCAL_PAPER_SAMPLE): candidate pairs for more example figures. Per class, the n pairs with the
+# largest mean ground truth among those with >= LOCAL_SUPP_MIN (default 10) concept-present images inside the class's
+# paper sample (so a top-3 can be all present and a bottom-3 all absent). Colour / texture concepts (names ending in
+# "ness") and the concepts in LOCAL_EXCLUDE ("a,b,...") are skipped, and so are the pairs in LOCAL_SKIP_PAIRS
+# ("class:concept;...", e.g. the paper's own figures). Every pair's statistics go to all_pairs.csv.
+SUPP = int(os.environ.get("LOCAL_SUPP", "0"))
+SUPP_MIN = int(os.environ.get("LOCAL_SUPP_MIN", "10"))
+EXCLUDE = {c.strip() for c in os.environ.get("LOCAL_EXCLUDE", "").split(",") if c.strip()}
+SKIP_PAIRS = {tuple(p.split(":")) for p in os.environ.get("LOCAL_SKIP_PAIRS", "").split(";") if p.strip()}
+assert not (SUPP and PAIRS), "LOCAL_SUPP and LOCAL_PAIRS are alternatives"
+assert not SUPP or os.environ.get("LOCAL_PAPER_SAMPLE"), "LOCAL_SUPP needs LOCAL_PAPER_SAMPLE"
+assert not PAPER_SAMPLE or PAIRS or SUPP, "LOCAL_PAPER_SAMPLE needs LOCAL_PAIRS or LOCAL_SUPP"
 
 
 def paper_sample(k: str, cls_of: dict[str, set[str]]) -> list[str]:
@@ -96,14 +107,30 @@ def main():
                 chosen[c, k].append("requested")
             else:
                 print(f"  {c} x {k}: no class-present image with the concept detected; skipped", flush=True)
-    for k in CLASSES if not PAIRS else []:
+    if SUPP:  # candidate pairs for more example figures (see LOCAL_SUPP above)
+        sample = {k: set(paper_sample(k, cls_of)) for k in CLASSES}
+        rows = []
+        for (c, k), (n, mean) in stats.items():
+            in_sample = len(sample[k] & gt[c, k].keys())
+            skipped = c.endswith("ness") or c in EXCLUDE or (k, c) in SKIP_PAIRS
+            rows.append((c, k, n, in_sample, mean, skipped, in_sample >= SUPP_MIN and not skipped))
+        with open(OUT / "all_pairs.csv", "w", newline="") as f:
+            w = csv.writer(f); w.writerow(["concept_name", "class_name", "n_present_available", "n_present_in_sample",
+                                           "mean_gt_delta_p", "skipped", "eligible"])
+            w.writerows(sorted(rows, key=lambda r: (r[1], -r[4])))
+        for k in CLASSES:
+            el = sorted((r for r in rows if r[1] == k and r[6]), key=lambda r: -r[4])[:SUPP]
+            for r in el:
+                chosen[r[0], k].append("supp_max_gt")
+            print(f"  {k}: {len(el)} candidate pairs", flush=True)
+    for k in CLASSES if not (PAIRS or SUPP) else []:
         el = [(p, s) for p, s in stats.items() if p[1] == k and s[0] >= MIN_PRESENT]
         if not el:
             print(f"  {k}: no eligible pair"); continue
         chosen[max(el, key=lambda x: x[1][1])[0]].append("max_gt")
         chosen[min(el, key=lambda x: x[1][1])[0]].append("min_gt")
         chosen[max(el, key=lambda x: (x[1][0], x[0]))[0]].append("most_images")
-    for p in CASES if not PAIRS else []:
+    for p in CASES if not (PAIRS or SUPP) else []:
         if stats.get(p, (0,))[0] >= MIN_CASE:
             chosen[p].append("paper_case")
     pairs = sorted(chosen)
